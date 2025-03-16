@@ -1,0 +1,19 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pydantic
+alembic
+python-dotenv
+bcrypt
+pytest
+loguru  
+pandas
+fastapi-cache2 
+aiocache
+python-multipart
+python-jose[cryptography] 
+passlib 
+requests
+pydantic-settings
+# Optional, for enhanced logging

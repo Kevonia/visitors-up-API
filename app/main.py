@@ -1,0 +1,56 @@
+import logging
+from fastapi import FastAPI,Response, Request
+from .routers import user, resident, allowlist, role, permission, visitor
+from .seed_roles import seed_roles  # Import the roles seeder function
+from .seed_permissions import seed_permissions  # Import the permissions seeder function
+from .logging_config import logger
+from fastapi.middleware.cors import CORSMiddleware
+from app.zoho_integration.routes import router as zoho_router
+# from cache import init_cache
+
+
+app = FastAPI()
+
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.middleware('http')
+async def api_middleware(request: Request, call_next):
+    req_body = await request.body()
+    #await set_body(request, req_body)  # not needed when using FastAPI>=0.108.0.
+    response = await call_next(request)
+    
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+    res_body = b''.join(chunks)
+    
+
+    return Response(content=res_body, status_code=response.status_code, 
+        headers=dict(response.headers), media_type=response.media_type)
+
+app.include_router(user.router, prefix="/api/v1", tags=["User"])
+app.include_router(resident.router, prefix="/api/v1", tags=["Resident"])
+app.include_router(allowlist.router, prefix="/api/v1", tags=["Allow List"])
+app.include_router(role.router, prefix="/api/v1", tags=["Role"])
+app.include_router(permission.router, prefix="/api/v1", tags=["Permission"])
+app.include_router(visitor.router, prefix="/api/v1", tags=["Visitor"])
+app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
+
+@app.on_event("startup")
+async def startup_event():
+    # seed_roles()
+    # seed_permissions()
+    # await init_cache()
+    logger.info("Starting up the application...")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down the application...")
