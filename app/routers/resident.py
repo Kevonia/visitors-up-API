@@ -1,17 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from .. import models, schemas, crud
+from .. import schemas, crud
 from ..database import SessionLocal
-
+from ..utilities.db_util import get_db
 router = APIRouter()
 
-# Dependency to get the database session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 # Create a new resident
 @router.post("/residents/", response_model=schemas.Resident)

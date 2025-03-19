@@ -3,27 +3,36 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 from .logging_config import logger
 from fastapi import HTTPException, status
-
+from app.utilities.authutil import get_password_hash
 # CRUD operations for User
+def get_user_by_email(db: Session, email: str):
+    return db.query(schemas.User).filter(schemas.User.email == email).first()
+
 def create_user(db: Session, user: schemas.UserCreate):
     logger.info(f"Creating user with email: {user.email}")
     
     # Check if the phone number exists in the AllowList
     db_allowlist = db.query(models.AllowList).filter(models.AllowList.phone_number == user.phone_number).first()
+    db_role = db.query(models.Role).filter(models.Role.name == "USER").first()
     
+    if user.role_id is None:
+       logger.info(f"Getting default role {user.role_id}")
+       user.role_id = db_role.id
+       
+     # Ensure this is a string
     if not db_allowlist:
         logger.warning(f"Phone number {user.phone_number} not found in AllowList")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number not found in AllowList. User creation denied.",
         )
-    
+    hashed_password = get_password_hash(user.password)
     # Create the user
     db_user = models.User(
         email=user.email,
         phone_number=user.phone_number,
         role_id=user.role_id,
-        hashed_password=user.hashed_password,
+        hashed_password=hashed_password,
     )
     db.add(db_user)
     db.commit()

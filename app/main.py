@@ -1,6 +1,6 @@
 import logging
 from fastapi import FastAPI,Response, Request
-from .routers import user, resident, allowlist, role, permission, visitor
+from .routers import user, resident, allowlist, role, permission, visitor,auth
 from .seed_roles import seed_roles  # Import the roles seeder function
 from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
@@ -36,6 +36,7 @@ async def api_middleware(request: Request, call_next):
     return Response(content=res_body, status_code=response.status_code, 
         headers=dict(response.headers), media_type=response.media_type)
 
+app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(user.router, prefix="/api/v1", tags=["User"])
 app.include_router(resident.router, prefix="/api/v1", tags=["Resident"])
 app.include_router(allowlist.router, prefix="/api/v1", tags=["Allow List"])

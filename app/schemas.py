@@ -8,19 +8,19 @@ from uuid import UUID  # Import UUID
 class UserBase(BaseModel):
     email: str
     phone_number: str
-    role_id: str  # Ensure this is a string
+    role_id: Optional[str]  = None
 
 class UserCreate(UserBase):
-    hashed_password: str
+    password: str
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
     phone_number: Optional[str] = None
     role_id: Optional[str] = None
-    hashed_password: Optional[str] = None
+    password: Optional[str] = None
 
 class User(UserBase):
-    id: str  # Ensure this is a string
+    id: str 
     created_at: datetime
     updated_at: datetime
 

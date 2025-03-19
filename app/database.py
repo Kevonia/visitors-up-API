@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import os
 from .logging_config import logger
-
+from app.config.config import settings
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,7 +19,7 @@ if not SQLALCHEMY_DATABASE_URL:
 
 logger.info("Connecting to the database...")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

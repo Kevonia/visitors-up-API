@@ -5,12 +5,10 @@ from sqlalchemy import pool
 from alembic import context
 import os
 import sys
-from dotenv import load_dotenv
 from app.logging_config import logger
 
 
-# Load environment variables from .env file
-load_dotenv()
+
 
 # Add the project root directory to the Python path
 sys.path.append(os.getcwd())

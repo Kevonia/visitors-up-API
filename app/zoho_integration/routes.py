@@ -71,7 +71,7 @@ async def update_invoice(invoice_id: str, invoice_data: dict, ):
         )
 
 @router.delete("/invoices/{invoice_id}")
-async def delete_invoice(invoice_id: str, ):
+async def delete_invoice(invoice_id: str ):
     """Delete an invoice from Zoho Invoice"""
     try:
         logger.info(f"Deleting invoice {invoice_id} for user: ")
