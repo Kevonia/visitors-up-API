@@ -1,4 +1,5 @@
 # app/routers/allowlist.py
+from app.decorator import admin_required
 from fastapi import APIRouter, Depends, HTTPException,File, UploadFile
 from sqlalchemy.orm import Session
 from .. import schemas, crud
@@ -14,6 +15,7 @@ def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(g
     return crud.create_allowlist(db=db, allowlist=allowlist)
 
 @router.post("/allowlist/file")
+@admin_required
 async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="File must be a CSV")
