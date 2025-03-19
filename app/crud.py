@@ -4,9 +4,10 @@ from . import models, schemas
 from .logging_config import logger
 from fastapi import HTTPException, status
 from app.utilities.authutil import get_password_hash
+
 # CRUD operations for User
 def get_user_by_email(db: Session, email: str):
-    return db.query(schemas.User).filter(schemas.User.email == email).first()
+    return db.query(models.User).filter(models.User.email == email).first().to_dict()
 
 def create_user(db: Session, user: schemas.UserCreate):
     logger.info(f"Creating user with email: {user.email}")
@@ -47,6 +48,11 @@ def get_user(db: Session, user_id: str):
         logger.warning(f"User with ID {user_id} not found")
     return db_user.to_dict()
 
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    logger.info(f"Fetching residents with skip: {skip}, limit: {limit}")
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    return [user.to_dict() for user in users]  # Convert each instance to a dictionary
+
 def get_visitors(db: Session, skip: int = 0, limit: int = 100):
     logger.info(f"Fetching visitors with skip: {skip}, limit: {limit}")
     visitors = db.query(models.Visitor).offset(skip).limit(limit).all()
@@ -62,8 +68,8 @@ def update_user(db: Session, user_id: str, user: schemas.UserUpdate):
             db_user.phone_number = user.phone_number
         if user.role_id:
             db_user.role_id = user.role_id
-        if user.hashed_password:
-            db_user.hashed_password = user.hashed_password
+        if user.password:
+            db_user.hashed_password = get_password_hash(user.password)
         db.commit()
         db.refresh(db_user)
         logger.info(f"User updated successfully: {db_user.id}")
