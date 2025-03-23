@@ -1,5 +1,5 @@
 # app/routers/allowlist.py
-from app.decorator import admin_required
+from ..decorator.auth_decorator import admin_required
 from fastapi import APIRouter, Depends, HTTPException,File, UploadFile
 from sqlalchemy.orm import Session
 from .. import schemas, crud
@@ -10,7 +10,8 @@ router = APIRouter()
 
 
 # Create a new allowlist entry
-@router.post("/allowlist/",response_model=schemas.AllowList)
+@router.post("/allowlist/")
+@admin_required
 def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(get_db)):
     return crud.create_allowlist(db=db, allowlist=allowlist)
 
@@ -46,7 +47,6 @@ async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 # Get an allowlist entry by ID
 @router.get("/allowlist/{allowlist_id}", response_model=schemas.AllowList)
-@admin_required
 def read_allowlist(allowlist_id: str, db: Session = Depends(get_db),current_user: schemas.UserBase = Depends(get_current_user)):
     db_allowlist = crud.get_allowlist(db, allowlist_id=allowlist_id)
     if db_allowlist is None:

@@ -6,10 +6,12 @@ from .seed_permissions import seed_permissions  # Import the permissions seeder 
 from .logging_config import logger
 from fastapi.middleware.cors import CORSMiddleware
 from app.zoho_integration.routes import router as zoho_router
-# from cache import init_cache
+import time
 
 
 app = FastAPI()
+
+
 
 origins = ["*"]
 
@@ -21,20 +23,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware('http')
-async def api_middleware(request: Request, call_next):
-    req_body = await request.body()
-    #await set_body(request, req_body)  # not needed when using FastAPI>=0.108.0.
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.perf_counter()
     response = await call_next(request)
-    
-    chunks = []
-    async for chunk in response.body_iterator:
-        chunks.append(chunk)
-    res_body = b''.join(chunks)
-    
-
-    return Response(content=res_body, status_code=response.status_code, 
-        headers=dict(response.headers), media_type=response.media_type)
+    process_time = time.perf_counter() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
 
 app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(user.router, prefix="/api/v1", tags=["User"])
