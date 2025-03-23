@@ -3,9 +3,9 @@ from app.decorator import admin_required
 from fastapi import APIRouter, Depends, HTTPException,File, UploadFile
 from sqlalchemy.orm import Session
 from .. import schemas, crud
-from ..database import SessionLocal
 import pandas as pd
-from ..utilities.db_util import get_db
+from ..utilities.db_util import get_db 
+from ..config.auth import get_current_user 
 router = APIRouter()
 
 
@@ -15,8 +15,7 @@ def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(g
     return crud.create_allowlist(db=db, allowlist=allowlist)
 
 @router.post("/allowlist/file")
-@admin_required
-async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="File must be a CSV")
 
@@ -47,7 +46,8 @@ async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 # Get an allowlist entry by ID
 @router.get("/allowlist/{allowlist_id}", response_model=schemas.AllowList)
-def read_allowlist(allowlist_id: str, db: Session = Depends(get_db)):
+@admin_required
+def read_allowlist(allowlist_id: str, db: Session = Depends(get_db),current_user: schemas.UserBase = Depends(get_current_user)):
     db_allowlist = crud.get_allowlist(db, allowlist_id=allowlist_id)
     if db_allowlist is None:
         raise HTTPException(status_code=404, detail="AllowList entry not found")
