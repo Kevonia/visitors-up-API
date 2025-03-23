@@ -4,23 +4,22 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID  # Import UUID
 
-# User schemas
-class UserBase(BaseModel):
-    email: str
-    phone_number: str
-    role_id: Optional[str]  = None
 
-class UserCreate(UserBase):
-    password: str
 
-class UserUpdate(BaseModel):
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
-    role_id: Optional[str] = None
-    password: Optional[str] = None
+# Role schemas
+class RoleBase(BaseModel):
+    name: str  # Ensure this is a string (or use Enum if applicable)
+    description: Optional[str] = None
 
-class User(UserBase):
-    id: str 
+class RoleCreate(RoleBase):
+    pass
+
+class RoleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class Role(RoleBase):
+    id: str  # Ensure this is a string
     created_at: datetime
     updated_at: datetime
 
@@ -29,7 +28,6 @@ class User(UserBase):
         json_encoders = {
             UUID: lambda v: str(v),  # Convert UUID to string
         }
-
 # Resident schemas
 class ResidentBase(BaseModel):
     lot_no: str
@@ -70,29 +68,6 @@ class AllowListUpdate(BaseModel):
     phone_number: Optional[str] = None
 
 class AllowList(AllowListBase):
-    id: str  # Ensure this is a string
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        orm_mode = True
-        json_encoders = {
-            UUID: lambda v: str(v),  # Convert UUID to string
-        }
-
-# Role schemas
-class RoleBase(BaseModel):
-    name: str  # Ensure this is a string (or use Enum if applicable)
-    description: Optional[str] = None
-
-class RoleCreate(RoleBase):
-    pass
-
-class RoleUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-
-class Role(RoleBase):
     id: str  # Ensure this is a string
     created_at: datetime
     updated_at: datetime
@@ -149,3 +124,31 @@ class Visitor(VisitorBase):
         json_encoders = {
             UUID: lambda v: str(v),  # Convert UUID to string
         }
+# User schemas
+class UserBase(BaseModel):
+    email: str
+    phone_number: str
+    role_id: Optional[str]  = None
+
+class UserCreate(UserBase):
+    password: str
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    role_id: Optional[str] = None
+    password: Optional[str] = None
+
+class User(UserBase):
+    id: str
+    role:Optional[Role] =None
+    resident:Optional[Resident] =None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+        json_encoders = {
+            UUID: lambda v: str(v),  # Convert UUID to string
+        }
+

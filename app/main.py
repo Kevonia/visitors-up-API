@@ -1,8 +1,8 @@
 import logging
 from fastapi import FastAPI,Response, Request
 from .routers import user, resident, allowlist, role, permission, visitor,auth
-from .seed_roles import seed_roles  # Import the roles seeder function
-from .seed_permissions import seed_permissions  # Import the permissions seeder function
+# from .seed_roles import seed_roles  # Import the roles seeder function
+# from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
 from fastapi.middleware.cors import CORSMiddleware
 from app.zoho_integration.routes import router as zoho_router

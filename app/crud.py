@@ -1,5 +1,5 @@
 import time
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session,joinedload
 from . import models, schemas
 from .logging_config import logger
 from fastapi import HTTPException, status
@@ -44,6 +44,7 @@ def create_user(db: Session, user: schemas.UserCreate):
 def get_user(db: Session, user_id: str):
     logger.info(f"Fetching user with ID: {user_id}")
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
+
     if db_user is None:
         logger.warning(f"User with ID {user_id} not found")
     return db_user.to_dict()
@@ -150,7 +151,7 @@ def create_allowlist(db: Session, allowlist: schemas.AllowListCreate):
     logger.info(f"Creating allowlist entry with email: {allowlist.email}")
     db_allowlist = models.AllowList(
         email=allowlist.email,
-        phone_number=allowlist.phone_number,
+        phone_number=str(allowlist.phone_number.replace("-","")),
     )
     db.add(db_allowlist)
     db.commit()
@@ -179,7 +180,7 @@ def update_allowlist(db: Session, allowlist_id: str, allowlist: schemas.AllowLis
         if allowlist.email:
             db_allowlist.email = allowlist.email
         if allowlist.phone_number:
-            db_allowlist.phone_number = allowlist.phone_number
+            db_allowlist.phone_number = str(allowlist.phone_number.replace("-",""))
         db_allowlist.updated_at =   time.time()
         db.commit()
         db.refresh(db_allowlist)
@@ -233,6 +234,7 @@ def update_role(db: Session, role_id: str, role: schemas.RoleUpdate):
             db_role.name = role.name
         if role.description:
             db_role.description = role.description
+        role.updated_at =   time.time()
         db.commit()
         db.refresh(db_role)
         logger.info(f"Role updated successfully: {db_role.id}")

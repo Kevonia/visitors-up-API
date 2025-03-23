@@ -7,17 +7,18 @@ class StatusEnum(str, Enum):
     PENDING = "PENDING"
 
 class DelinquencyEnum(str, Enum):
-    NONE = "ACTIVE"
-    MINOR = "INACTIVE"
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
 
-# Optional: Predefined roles and permissions
-class RoleEnum(str, Enum):
-    ADMIN = "ADMIN"
-    MANAGER = "MANAGER"
-    USER = "USER"
+# # Optional: Predefined roles and permissions
+# class RoleEnum(str, Enum):
+#     ADMIN = "ADMIN"
+#     MANAGER = "MANAGER"
+#     USER = "USER"
+#     SECURITYOFFICER = "SECURITYOFFICER"
 
-class PermissionEnum(str, Enum):
-    CREATE = "CREATE"
-    READ = "READ"
-    UPDATE = "UPDATE"
-    DELETE = "DELETE"
+# class PermissionEnum(str, Enum):
+#     CREATE = "CREATE"
+#     READ = "READ"
+#     UPDATE = "UPDATE"
+#     DELETE = "DELETE"ddd

@@ -11,7 +11,7 @@ router = APIRouter()
 
 # Create a new allowlist entry
 @router.post("/allowlist/")
-@admin_required
+# @admin_required
 def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(get_db)):
     return crud.create_allowlist(db=db, allowlist=allowlist)
 
