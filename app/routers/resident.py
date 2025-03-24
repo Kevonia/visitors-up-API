@@ -3,9 +3,13 @@ from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..database import SessionLocal
 from ..utilities.db_util import get_db
+from aiocache import cached
 router = APIRouter()
 
 
+
+
+cache_timer =60
 
 # Create a new resident
 @router.post("/residents/", response_model=schemas.Resident)

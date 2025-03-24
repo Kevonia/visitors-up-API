@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from .. import  schemas, crud
 from ..utilities.db_util import get_db
+from aiocache import cached
 router = APIRouter()
 
 

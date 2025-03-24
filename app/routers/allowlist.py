@@ -6,11 +6,13 @@ from .. import schemas, crud
 import pandas as pd
 from ..utilities.db_util import get_db 
 from ..config.auth import get_current_user 
+from aiocache import cached
 router = APIRouter()
 
-
+cache_timer =60
 # Create a new allowlist entry
 @router.post("/allowlist/")
+@cached(ttl=cache_timer)
 # @admin_required
 def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(get_db)):
     return crud.create_allowlist(db=db, allowlist=allowlist)
@@ -47,6 +49,7 @@ async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 # Get an allowlist entry by ID
 @router.get("/allowlist/{allowlist_id}", response_model=schemas.AllowList)
+@cached(ttl=cache_timer)
 def read_allowlist(allowlist_id: str, db: Session = Depends(get_db),current_user: schemas.UserBase = Depends(get_current_user)):
     db_allowlist = crud.get_allowlist(db, allowlist_id=allowlist_id)
     if db_allowlist is None:
@@ -55,6 +58,7 @@ def read_allowlist(allowlist_id: str, db: Session = Depends(get_db),current_user
 
 # Get all allowlist entries
 @router.get("/allowlist/", response_model=list[schemas.AllowList])
+@cached(ttl=cache_timer)
 def read_all_allowlists(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_all_allowlists(db, skip=skip, limit=limit)
 
