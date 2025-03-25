@@ -7,7 +7,7 @@ from app.utilities.authutil import get_password_hash
 
 # CRUD operations for User
 def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).filter(models.User.email == email).first().to_dict()
+    return db.query(models.User).filter(models.User.email == email).first()
 
 def create_user(db: Session, user: schemas.UserCreate):
     logger.info(f"Creating user with email: {user.email}")

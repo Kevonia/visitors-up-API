@@ -28,7 +28,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-
+       
         # Verify password
         if not verify_password(form_data.password, user.hashed_password):
             logger.warning(f"Incorrect password for user: {form_data.username}")
@@ -49,6 +49,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during login",
         )
+
+# Create a new user
+@router.post("/signup/", response_model=schemas.User)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db) ):
+    return crud.create_user(db=db, user=user)
 
 @router.get("/users/me", response_model=schemas.UserBase)
 def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):

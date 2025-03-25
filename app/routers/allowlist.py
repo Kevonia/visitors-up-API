@@ -1,5 +1,5 @@
 # app/routers/allowlist.py
-from ..decorator.auth_decorator import admin_required
+# from ..decorator.auth_decorator import admin_required
 from fastapi import APIRouter, Depends, HTTPException,File, UploadFile
 from sqlalchemy.orm import Session
 from .. import schemas, crud
@@ -14,7 +14,7 @@ cache_timer =60
 @router.post("/allowlist/")
 @cached(ttl=cache_timer)
 # @admin_required
-def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(get_db)):
+def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     return crud.create_allowlist(db=db, allowlist=allowlist)
 
 @router.post("/allowlist/file")
@@ -59,12 +59,12 @@ def read_allowlist(allowlist_id: str, db: Session = Depends(get_db),current_user
 # Get all allowlist entries
 @router.get("/allowlist/", response_model=list[schemas.AllowList])
 @cached(ttl=cache_timer)
-def read_all_allowlists(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_all_allowlists(skip: int = 0, limit: int = 100, db: Session = Depends(get_db) , current_user: schemas.UserBase = Depends(get_current_user)):
     return crud.get_all_allowlists(db, skip=skip, limit=limit)
 
 # Update an allowlist entry
 @router.put("/allowlist/{allowlist_id}", response_model=schemas.AllowList)
-def update_allowlist(allowlist_id: str, allowlist: schemas.AllowListUpdate, db: Session = Depends(get_db)):
+def update_allowlist(allowlist_id: str, allowlist: schemas.AllowListUpdate, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     db_allowlist = crud.update_allowlist(db, allowlist_id=allowlist_id, allowlist=allowlist)
     if db_allowlist is None:
         raise HTTPException(status_code=404, detail="AllowList entry not found")
@@ -72,7 +72,7 @@ def update_allowlist(allowlist_id: str, allowlist: schemas.AllowListUpdate, db: 
 
 # Delete an allowlist entry
 @router.delete("/allowlist/{allowlist_id}", response_model=schemas.AllowList)
-def delete_allowlist(allowlist_id: str, db: Session = Depends(get_db)):
+def delete_allowlist(allowlist_id: str, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     db_allowlist = crud.delete_allowlist(db, allowlist_id=allowlist_id)
     if db_allowlist is None:
         raise HTTPException(status_code=404, detail="AllowList entry not found")
