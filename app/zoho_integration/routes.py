@@ -11,11 +11,16 @@ router = APIRouter()
 zoho_client = ZohoClient()
 
 # Helper function to log errors
+
+
 def log_error(error: Exception, endpoint: str):
     logger.error(f"Error in {endpoint}: {str(error)}")
 
+
 # Protected routes with authentication and caching
-cache_timer =3600
+cache_timer = 3600
+
+
 @router.get("/invoices")
 @cached(ttl=cache_timer)  # Cache response for 60 seconds
 async def get_invoices():
@@ -29,6 +34,7 @@ async def get_invoices():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch invoices",
         )
+
 
 @router.get("/invoices/{invoice_id}")
 @cached(ttl=cache_timer)
@@ -44,6 +50,7 @@ async def get_invoice(invoice_id: str, ):
             detail=f"Failed to fetch invoice with ID {invoice_id}",
         )
 
+
 @router.post("/invoices")
 async def create_invoice(invoice_data: dict):
     """Create a new invoice in Zoho Invoice"""
@@ -56,6 +63,7 @@ async def create_invoice(invoice_data: dict):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create invoice",
         )
+
 
 @router.put("/invoices/{invoice_id}")
 async def update_invoice(invoice_id: str, invoice_data: dict, ):
@@ -70,8 +78,9 @@ async def update_invoice(invoice_id: str, invoice_data: dict, ):
             detail=f"Failed to update invoice with ID {invoice_id}",
         )
 
+
 @router.delete("/invoices/{invoice_id}")
-async def delete_invoice(invoice_id: str ):
+async def delete_invoice(invoice_id: str):
     """Delete an invoice from Zoho Invoice"""
     try:
         logger.info(f"Deleting invoice {invoice_id} for user: ")
@@ -81,4 +90,34 @@ async def delete_invoice(invoice_id: str ):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete invoice with ID {invoice_id}",
+        )
+
+
+# User
+@router.get("/users")
+async def get_users():
+    """Get all User from Zoho Invoice"""
+    try:
+        logger.info(f"Fetching all User for Zoho")
+        return zoho_client.make_request("users")
+    except Exception as e:
+        log_error(e, "get_users")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch users",
+        )
+ 
+
+#Contact
+@router.get("/contacts")
+async def get_contacts():
+    """Get all Contacts from Zoho Invoice"""
+    try:
+        logger.info(f"Fetching all Contacts for Zoho")
+        return zoho_client.make_request("contacts")
+    except Exception as e:
+        log_error(e, "get_contacts")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch contacts",
         )

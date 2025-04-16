@@ -1,4 +1,5 @@
 import logging
+from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.logging_config import logger
 
 
 router = APIRouter()
+zoho_client = ZohoClient()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
@@ -55,7 +57,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db) ):
     return crud.create_user(db=db, user=user)
 
-@router.get("/users/me", response_model=schemas.UserBase)
+@router.get("/users/me", response_model=schemas.Contact)
 def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -79,7 +81,9 @@ def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get
             raise credentials_exception
 
         logger.info(f"Successfully fetched details for user: {email}")
-        return user
+        zoho_contacts= zoho_client.make_request("contacts")
+        zoho_contact = find_contact_by_email(user.email,zoho_contacts['contacts'])
+        return zoho_contact
 
     except JWTError as e:
         logger.error(f"JWT error while decoding token: {str(e)}", exc_info=True)
@@ -90,3 +94,9 @@ def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching user details",
         )
+        
+def find_contact_by_email(email, contacts):
+    for contact in contacts:
+        if contact.get('email') == email:
+            return contact
+    return None       
