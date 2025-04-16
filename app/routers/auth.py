@@ -92,16 +92,16 @@ def login(
             )
 
         # Check user status
-        if not user.is_active:
-            log_failed_attempt(form_data.username, client_ip, user_agent, "inactive_account")
-            logger.warning(
-                f"Inactive user login attempt: {user.email}",
-                extra={"tags": {"security": "inactive_account", "severity": "medium"}}
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is inactive. Please contact support.",
-            )
+        # if not user.is_active:
+        #     log_failed_attempt(form_data.username, client_ip, user_agent, "inactive_account")
+        #     logger.warning(
+        #         f"Inactive user login attempt: {user.email}",
+        #         extra={"tags": {"security": "inactive_account", "severity": "medium"}}
+        #     )
+        #     raise HTTPException(
+        #         status_code=status.HTTP_403_FORBIDDEN,
+        #         detail="Account is inactive. Please contact support.",
+        #     )
 
         # Verify password with timing attack protection
         if not verify_password(form_data.password, user.hashed_password):
@@ -122,8 +122,8 @@ def login(
                 "sub": user.email,
                 "user_id": str(user.id),
                 "role": user.role.name if user.role else None,
-                "iss": settings.JWT_ISSUER,
-                "aud": settings.JWT_AUDIENCE,
+                # "iss": settings.JWT_ISSUER,
+                # "aud": settings.JWT_AUDIENCE,
             }
         )
 
@@ -146,7 +146,7 @@ def login(
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            "expires_in": settings.access_token_expire_minutes * 60
         }
 
     except HTTPException:
@@ -239,14 +239,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Securely verify password with constant-time comparison."""
     return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(data: dict) -> str:
-    """Create JWT token with standard claims and expiration."""
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-# Create a new user
 
 
 @router.post("/signup/", response_model=schemas.User)
@@ -340,7 +333,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                 )
             invoices_data = zoho_client.make_request("invoices")
             contact_invoices = find_invoices_by_email(user.email, invoices_data.get('invoices', []))
-            delinquency_status = "INACTIVE" if count_inactive_status(contact_invoices, "overdue") >= 3 else "ACTIVE"
+            delinquency_status = "ACTIVE" if count_inactive_status(contact_invoices, "overdue") >= 3 else "INACTIVE"
             # Get address information
             contact_address = zoho_client.make_request(
                 f"contacts/{zoho_contact['contact_id']}/address")
