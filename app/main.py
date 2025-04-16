@@ -1,6 +1,6 @@
 import logging
 from fastapi import FastAPI,Response, Request
-from .routers import user, resident, allowlist, role, permission, visitor,auth
+from .routers import user, resident, allowlist, role, permission, visitor,auth,user_visitor
 # from .seed_roles import seed_roles  # Import the roles seeder function
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
@@ -38,6 +38,7 @@ app.include_router(allowlist.router, prefix="/api/v1", tags=["Allow List"])
 app.include_router(role.router, prefix="/api/v1", tags=["Role"])
 app.include_router(permission.router, prefix="/api/v1", tags=["Permission"])
 app.include_router(visitor.router, prefix="/api/v1", tags=["Visitor"])
+app.include_router(user_visitor.router, prefix="/api/v1/user", tags=["User Visitor"])
 # app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
 
 @app.on_event("startup")

@@ -149,5 +149,5 @@ class Visitor(Base):
             "relationship_type": self.relationship_type,
             "date_created": self.date_created,
             "created_by": str(self.created_by),
-            # "created_by_user": self.created_by_user.to_dict() if self.created_by_user else None,  # Include user details
+            "created_by_user": self.created_by_user.to_dict() if self.created_by_user else None,  # Include user details
         }

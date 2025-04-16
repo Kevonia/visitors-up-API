@@ -326,6 +326,13 @@ def get_visitor(db: Session, visitor_id: str):
         logger.warning(f"Visitor with ID {visitor_id} not found")
     return db_visitor.to_dict()
 
+def get_visitors_by_resident(db: Session, resident_id: str , skip: int = 0, limit: int = 100):
+    logger.info(f"Fetching visitors for Resident ID: {resident_id}")
+    visitors = db.query(models.Visitor).filter(models.Visitor.created_by == resident_id).offset(skip).limit(limit).all()
+    if visitors is None:
+        logger.warning(f"Visitor with ID {resident_id} not found")
+    return [visitor.to_dict() for visitor in visitors] 
+
 def get_visitors(db: Session, skip: int = 0, limit: int = 100):
     logger.info(f"Fetching visitors with skip: {skip}, limit: {limit}")
     visitors = db.query(models.Visitor).offset(skip).limit(limit).all()
