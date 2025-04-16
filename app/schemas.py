@@ -105,7 +105,8 @@ class Permission(PermissionBase):
 class VisitorBase(BaseModel):
     name: str
     relationship_type: str
-    created_by: str  # Ensure this is a string
+    created_by: str
+    created_by_user: Optional[Resident] = None# Ensure this is a string
 
 class VisitorCreate(VisitorBase):
     pass
@@ -114,6 +115,7 @@ class VisitorUpdate(BaseModel):
     name: Optional[str] = None
     relationship_type: Optional[str] = None
     created_by: Optional[str] = None
+    
 
 class Visitor(VisitorBase):
     id: str  # Ensure this is a string
@@ -272,3 +274,13 @@ class Contact(BaseModel):
             datetime: lambda v: v.isoformat()
         }
         
+class Token(BaseModel):
+    """Token response schema"""
+    access_token: str
+    token_type: str
+    expires_in:  Optional[int] = None
+class TokenData(BaseModel):
+    """Token data schema"""
+    email: str 
+class TokenRefresh(BaseModel):
+    refresh_token: str

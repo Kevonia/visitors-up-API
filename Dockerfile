@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8000
 
 # Command to run the application with hot reload
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload",'pytest']
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

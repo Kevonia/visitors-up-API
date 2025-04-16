@@ -4,7 +4,7 @@ from enum import Enum
 class StatusEnum(str, Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
-    PENDING = "PENDING"
+    
 
 class DelinquencyEnum(str, Enum):
     ACTIVE = "ACTIVE"
