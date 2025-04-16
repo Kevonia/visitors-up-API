@@ -1,12 +1,16 @@
 # app/auth.py
 from datetime import datetime, timedelta
 from typing import Optional
+
+from requests import Session
+from app.utilities.db_util import get_db
+from app import crud
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-
+from app.logging_config import logger
 # Load settings
 from app.config .config import settings
 
@@ -52,21 +56,34 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 # Get current user
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme) ,db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        # Decode the JWT token
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
+            logger.warning("Invalid token: missing 'sub' field")
             raise credentials_exception
-    except JWTError:
-        raise credentials_exception
 
-    user = fake_users_db.get(username)
-    if user is None:
+        # Fetch user from the database
+        user = crud.get_user_by_email(db, email=email)
+        if user is None:
+            logger.warning(f"User not found for email: {email}")
+            raise credentials_exception
+            
+        return user  # Return a User object
+        
+    except JWTError as e:
+        logger.error(f"JWT error while decoding token: {str(e)}", exc_info=True)
         raise credentials_exception
-    return User(**user)  # Return a User object
+    except Exception as e:
+        logger.error(f"Unexpected error while fetching user details: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while fetching user details",
+        )
