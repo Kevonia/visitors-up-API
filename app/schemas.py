@@ -265,6 +265,7 @@ class Contact(BaseModel):
     has_attachment: bool
     address:Address
     invoices: List[Invoice] = []
+    user_id: UUID = None
 
     class Config:
         json_encoders = {
