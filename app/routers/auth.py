@@ -283,10 +283,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                 models.Role.name == "USER").first()
             if not db_role:
                 logger.error("Default USER role not found in database")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="System configuration error - default role missing",
-                )
+                role =models.Role(name="USER", description="Default user role")
+                db_role =crud.create_role(db, role)
             user.role_id = db_role.id
             logger.debug(f"Assigned default role ID: {user.role_id}")
 
