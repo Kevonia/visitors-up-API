@@ -272,3 +272,13 @@ class Contact(BaseModel):
             datetime: lambda v: v.isoformat()
         }
         
+class Token(BaseModel):
+    """Token response schema"""
+    access_token: str
+    token_type: str
+    expires_in:  Optional[int] = None
+class TokenData(BaseModel):
+    """Token data schema"""
+    email: str 
+class TokenRefresh(BaseModel):
+    refresh_token: str
