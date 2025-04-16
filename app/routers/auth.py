@@ -9,12 +9,14 @@ from app.config.config import settings
 from ..utilities.authutil import verify_password, create_access_token
 from jose import JWTError, jwt
 from app.logging_config import logger
-
+from aiocache import cached
 
 router = APIRouter()
 zoho_client = ZohoClient()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
+# Protected routes with authentication and caching
+cache_timer = 3600
 
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -58,6 +60,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db) ):
     return crud.create_user(db=db, user=user)
 
 @router.get("/users/me", response_model=schemas.Contact)
+# @cached(ttl=cache_timer)
 def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -81,8 +84,11 @@ def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get
             raise credentials_exception
 
         logger.info(f"Successfully fetched details for user: {email}")
-        zoho_contacts= zoho_client.make_request("contacts")
-        zoho_contact = find_contact_by_email(user.email,zoho_contacts['contacts'])
+        zoho_contacts= zoho_client.make_request("contacts") 
+        zoho_contact = find_contact_by_email(user.email,zoho_contacts['contacts'])  
+        contact_address  = zoho_client.make_request(f"contacts/{zoho_contact['contact_id']}/address")
+        
+        zoho_contact['address']=contact_address['addresses'][0]
         return zoho_contact
 
     except JWTError as e:

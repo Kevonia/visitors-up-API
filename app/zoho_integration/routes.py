@@ -95,6 +95,7 @@ async def delete_invoice(invoice_id: str):
 
 # User
 @router.get("/users")
+@cached(ttl=cache_timer)
 async def get_users():
     """Get all User from Zoho Invoice"""
     try:
@@ -110,6 +111,7 @@ async def get_users():
 
 #Contact
 @router.get("/contacts")
+@cached(ttl=cache_timer)
 async def get_contacts():
     """Get all Contacts from Zoho Invoice"""
     try:

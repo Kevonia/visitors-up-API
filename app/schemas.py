@@ -152,6 +152,17 @@ class User(UserBase):
             UUID: lambda v: str(v),  # Convert UUID to string
         }
 
+class Address(BaseModel):
+    address_id: int
+    attention: Optional[str] = None
+    address: Optional[str]  = None
+    street2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip: Optional[str] = None
+    country: Optional[str] = None
+    fax: Optional[str] = None
+    phone: Optional[str] = None
 class Contact(BaseModel):
     contact_id: str
     contact_name: str
@@ -192,8 +203,10 @@ class Contact(BaseModel):
     custom_field_hash: Dict = {}
     ach_supported: bool
     has_attachment: bool
+    address:Address
 
     class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
+        
