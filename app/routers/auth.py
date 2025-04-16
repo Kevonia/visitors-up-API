@@ -17,7 +17,7 @@ zoho_client = ZohoClient()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 # Protected routes with authentication and caching
 cache_timer = 3600
-
+user_test="kereeseholness@gmail.com"
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     try:
@@ -84,11 +84,14 @@ def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get
             raise credentials_exception
 
         logger.info(f"Successfully fetched details for user: {email}")
-        zoho_contacts= zoho_client.make_request("contacts") 
-        zoho_contact = find_contact_by_email(user.email,zoho_contacts['contacts'])  
+        zoho_contacts= zoho_client.make_request("contacts")
+        zoho_invoices=zoho_client.make_request("invoices") 
+        zoho_contact = find_contact_by_email(user_test,zoho_contacts['contacts'])  
         contact_address  = zoho_client.make_request(f"contacts/{zoho_contact['contact_id']}/address")
-        
+        contact_invoices= find_invoices_by_email(user_test,zoho_invoices['invoices'])
+         
         zoho_contact['address']=contact_address['addresses'][0]
+        zoho_contact['invoices']=contact_invoices
         return zoho_contact
 
     except JWTError as e:
@@ -105,4 +108,13 @@ def find_contact_by_email(email, contacts):
     for contact in contacts:
         if contact.get('email') == email:
             return contact
-    return None       
+    return None  
+
+def find_invoices_by_email(email, invoices):
+    invoicelist = [] 
+    for invoice in invoices:
+        if invoice.get('email') == email:
+            invoicelist.append(invoice)
+        invoicelist.sort(key=lambda x: x.get('due_date'), reverse=True)
+
+    return invoicelist[:6]  # Return the first 6 invoices     

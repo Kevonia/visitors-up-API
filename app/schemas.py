@@ -153,7 +153,7 @@ class User(UserBase):
         }
 
 class Address(BaseModel):
-    address_id: int
+    address_id: Optional[int] = None
     attention: Optional[str] = None
     address: Optional[str]  = None
     street2: Optional[str] = None
@@ -163,6 +163,66 @@ class Address(BaseModel):
     country: Optional[str] = None
     fax: Optional[str] = None
     phone: Optional[str] = None
+    
+    
+class Invoice(BaseModel):
+    ach_payment_initiated: bool
+    invoice_id: str
+    zcrm_potential_id: str
+    customer_id: str
+    zcrm_potential_name: str
+    customer_name: str
+    company_name: str
+    status: str
+    invoice_number: str
+    reference_number: str
+    date: str
+    due_date: str
+    due_days: str
+    email: str
+    project_name: str
+    billing_address: Address
+    shipping_address: Address
+    country: str
+    phone: str
+    created_by: str
+    total: float
+    balance: float
+    payment_expected_date: str
+    custom_fields: List = []
+    custom_field_hash: Dict = {}
+    salesperson_name: str
+    shipping_charge: float
+    adjustment: float
+    created_time: str
+    last_modified_time: str
+    updated_time: str
+    is_viewed_by_client: bool
+    has_attachment: bool
+    client_viewed_time: str
+    is_emailed: bool
+    color_code: str
+    current_sub_status_id: str
+    current_sub_status: str
+    currency_id: str
+    schedule_time: str
+    currency_code: str
+    currency_symbol: str
+    template_type: str
+    no_of_copies: int
+    show_no_of_copies: bool
+    invoice_url: str
+    transaction_type: str
+    reminders_sent: int
+    last_reminder_sent_date: str
+    last_payment_date: str
+    template_id: str
+    documents: str
+    salesperson_id: str
+    write_off_amount: float
+    exchange_rate: float
+    unprocessed_payment_amount: float
+    
 class Contact(BaseModel):
     contact_id: str
     contact_name: str
@@ -204,6 +264,7 @@ class Contact(BaseModel):
     ach_supported: bool
     has_attachment: bool
     address:Address
+    invoices: List[Invoice] = []
 
     class Config:
         json_encoders = {
