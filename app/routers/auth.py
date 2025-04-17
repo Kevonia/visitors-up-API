@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import crud, schemas
 from ..utilities.db_util import get_db
 from app.config.config import settings
-from ..utilities.authutil import get_password_hash, verify_password, create_access_token
+from ..utilities.authutil import get_password_hash, verify_password, create_access_token,create_refresh_token
 from jose import JWTError, jwt
 from app.logging_config import logger
 from aiocache import cached
@@ -126,7 +126,15 @@ def login(
                 # "aud": settings.JWT_AUDIENCE,
             }
         )
-
+        refresh_token = create_refresh_token(
+            data={
+                "sub": user.email,
+                "user_id": str(user.id),
+                "role": user.role.name if user.role else None,
+                # "iss": settings.JWT_ISSUER,
+                # "aud": settings.JWT_AUDIENCE,
+            }
+        )
         # Log successful login
         login_duration = (time.time() - login_attempt_time) * 1000
         logger.info(
@@ -145,6 +153,7 @@ def login(
 
         return {
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": settings.access_token_expire_minutes * 60
         }
