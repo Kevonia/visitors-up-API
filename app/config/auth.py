@@ -99,11 +99,11 @@ def create_refresh_token(data: dict):
 def verify_refresh_token(token: str):
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        if payload.get("type") != "refresh":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type"
-            )
+        # if payload.get("type") != "refresh":
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Invalid token type"
+        #     )
         return payload
     except JWTError:
         raise HTTPException(
