@@ -22,7 +22,7 @@ import json
 router = APIRouter()
 zoho_client = ZohoClient()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 # Protected routes with authentication and caching
 cache_timer = 3600
 
@@ -474,6 +474,7 @@ def read_users_me(
             # Prepare response data
             response_data = {
                 **zoho_contact,
+                "delinquency_status": user.resident.delinquency_status, 
                 "address": contact_address,
                 "invoices": contact_invoices,
                 "user_id": user.id,
