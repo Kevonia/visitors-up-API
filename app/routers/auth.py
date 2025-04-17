@@ -566,6 +566,7 @@ def find_invoices_by_email(email: str, invoices: list) -> list:
     
 @router.post("/refresh", response_model=schemas.Token)
 async def refresh_token(token_data: schemas.TokenRefresh):
+    logger.info(f"Refreshing access token"{token_data})
     payload = verify_refresh_token(token_data.refresh_token)
     new_access_token = create_access_token(
         data={"sub": payload.get("sub")}
