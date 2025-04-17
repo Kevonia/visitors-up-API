@@ -58,7 +58,12 @@ def create_visitor(
         relationship_type=visitor.relationship_type,
         created_by=user.resident.id,
     ) 
-    
+       # Check delinquency status
+    if user.resident.delinquency_status == models.DelinquencyEnum.ACTIVE:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot add more visitors. Your account has delinquency issues. Please contact admin."
+        )
     try:
         return crud.create_visitor(db=db, visitor=visitor_data)
     except Exception as e:
