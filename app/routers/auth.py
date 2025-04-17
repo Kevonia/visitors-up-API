@@ -283,10 +283,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                 models.Role.name == "USER").first()
             if not db_role:
                 logger.error("Default USER role not found in database")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="System configuration error - default role missing",
-                )
+                role =models.Role(name="USER", description="Default user role")
+                db_role =crud.create_role(db, role)
             user.role_id = db_role.id
             logger.debug(f"Assigned default role ID: {user.role_id}")
 
@@ -599,3 +597,125 @@ def count_inactive_status(json_list,status):
     except (json.JSONDecodeError, AttributeError, TypeError) as e:
         print(f"Error processing JSON data: {e}")
         return 0
+    
+    
+@router.post("/logout")
+async def logout(
+    token: str = Depends(oauth2_scheme),
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Logout endpoint that invalidates the current access token.
+    
+    Steps:
+    1. Validates the incoming token
+    2. Adds token to a blacklist with remaining TTL
+    3. Logs the logout event
+    4. Returns successful logout response
+    
+    Security Considerations:
+    - Uses Redis for token blacklisting
+    - Logs client information for security monitoring
+    - Handles token validation errors gracefully
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid authentication credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # Get client information for logging
+        client_ip = request.client.host if request else "unknown"
+        user_agent = request.headers.get("user-agent", "unknown")
+        
+        # Validate token
+        try:
+            payload = jwt.decode(
+                token, 
+                settings.secret_key,
+                algorithms=[settings.algorithm]
+            )
+            email = payload.get("sub")
+            exp = payload.get("exp")
+            
+            if not email:
+                logger.warning("Invalid token: missing email in payload")
+                raise credentials_exception
+                
+            # Calculate remaining token TTL
+            if exp:
+                remaining_ttl = exp - int(time.time())
+                if remaining_ttl < 0:
+                    remaining_ttl = 0
+            else:
+                remaining_ttl = settings.access_token_expire_minutes * 60
+                
+        except JWTError as e:
+            logger.warning(f"JWT validation failed during logout: {str(e)}")
+            raise credentials_exception
+            
+        # Add token to blacklist
+        redis_conn = redis.Redis(connection_pool=redis_pool)
+        try:
+            # Store token with remaining TTL
+            redis_conn.setex(
+                f"token_blacklist:{token}",
+                remaining_ttl,
+                "invalidated"
+            )
+            
+            # Log the logout event
+            logout_entry = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "user": email,
+                "ip": client_ip,
+                "user_agent": user_agent,
+                "action": "logout"
+            }
+            redis_conn.lpush("security:user_logouts", json.dumps(logout_entry))
+            redis_conn.ltrim("security:user_logouts", 0, 9999)
+            
+        except redis.RedisError as e:
+            logger.error(f"Redis error during logout: {str(e)}")
+            # Continue even if Redis fails - don't block logout
+        finally:
+            redis_conn.close()
+            
+        logger.info(
+            f"User {email} logged out successfully from {client_ip}",
+            extra={
+                "tags": {
+                    "action": "logout",
+                    "user": email,
+                    "ip": client_ip
+                }
+            }
+        )
+        
+        return {"detail": "Successfully logged out"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during logout: {str(e)}",
+            exc_info=True,
+            extra={"tags": {"error": "logout_failure", "severity": "high"}}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during logout"
+        )
+        
+async def is_token_blacklisted(token: str) -> bool:
+    """Check if token is in the blacklist"""
+    redis_conn = redis.Redis(connection_pool=redis_pool)
+    try:
+        return redis_conn.exists(f"token_blacklist:{token}") == 1
+    except redis.RedisError as e:
+        logger.error(f"Redis error checking token blacklist: {str(e)}")
+        return False
+    finally:
+        redis_conn.close()
