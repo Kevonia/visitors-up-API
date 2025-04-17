@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(..., env="SECRET_KEY")
     algorithm: str = Field(default="HS256", env="ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
-    access_token_expire_days: int = Field(default=30, env="REFRESH_TOKEN_EXPIRE_DAYS")
+    refresh_token_expire_days: int = Field(default=30, env="REFRESH_TOKEN_EXPIRE_DAYS")
     # JWT configuration
     REDIS_URL: str = Field(..., env="REDIS_URL") # Or your Redis URL
     FAILED_LOGIN_RETENTION_DAYS: int = 30
