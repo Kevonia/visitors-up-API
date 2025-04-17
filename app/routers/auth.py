@@ -22,7 +22,7 @@ import json
 router = APIRouter()
 zoho_client = ZohoClient()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 # Protected routes with authentication and caching
 cache_timer = 3600
 
