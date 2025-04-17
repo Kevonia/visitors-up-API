@@ -573,7 +573,7 @@ async def refresh_token(token_data: schemas.TokenRefresh):
     
     return {
         "access_token": new_access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": token_data.refresh_token,
         "token_type": "bearer",
         "expires_in": settings.access_token_expire_minutes * 60
     }
