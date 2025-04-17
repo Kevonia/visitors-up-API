@@ -568,8 +568,7 @@ def find_invoices_by_email(email: str, invoices: list) -> list:
 async def refresh_token(token_data: schemas.TokenRefresh):
     payload = verify_refresh_token(token_data.refresh_token)
     new_access_token = create_access_token(
-        data={"sub": payload.get("sub")},
-        expires_delta=timedelta(minutes=settings.access_token_expire_minutes)
+        data={"sub": payload.get("sub")}
     )
     
     return {
