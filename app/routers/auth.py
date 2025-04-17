@@ -569,13 +569,14 @@ async def refresh_token(token_data: schemas.TokenRefresh):
     payload = verify_refresh_token(token_data.refresh_token)
     new_access_token = create_access_token(
         data={"sub": payload.get("sub")},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta=timedelta(minutes=settings.access_token_expire_minutes)
     )
     
     return {
         "access_token": new_access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        "expires_in": settings.access_token_expire_minutes * 60
     }
     
     
