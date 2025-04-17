@@ -52,7 +52,7 @@ class Resident(Base):
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     lot_no = Column(String, unique=True, index=True)
     status = Column(Enum(StatusEnum), default=StatusEnum.ACTIVE)
-    delinquency_status = Column(Enum(DelinquencyEnum), default=DelinquencyEnum.ACTIVE)
+    delinquency_status = Column(Enum(DelinquencyEnum), default=DelinquencyEnum.INACTIVE)
     user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), unique=True)
       # One-to-one relationship with User
     user = relationship("User", back_populates="resident")

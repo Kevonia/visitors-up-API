@@ -6,6 +6,7 @@ from .. import schemas, crud
 from ..utilities.db_util import get_db
 from ..config.auth import get_current_user
 from aiocache import cached
+from ..logging_config import logger
 router = APIRouter()
 
 
@@ -58,6 +59,7 @@ def create_visitor(
         relationship_type=visitor.relationship_type,
         created_by=user.resident.id,
     ) 
+    logger.info(f"Creating visitor: {user.resident}")
        # Check delinquency status
     if user.resident.delinquency_status == models.DelinquencyEnum.ACTIVE:
         raise HTTPException(
