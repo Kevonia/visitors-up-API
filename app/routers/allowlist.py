@@ -55,8 +55,8 @@ async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 # Get an allowlist entry by ID
 @router.get("/allowlist/load")
-# @admin_required
-def load_allowlist(db: Session = Depends(get_db)):
+@admin_required
+def load_allowlist(db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     crud.delete_all_allowlist(db)  # Clear existing allowlist entries
     zoho_contacts=zoho_client.make_request("contacts") 
     contacts_mobile_email = get_contacts_mobile_and_email(zoho_contacts)
@@ -71,7 +71,7 @@ def load_allowlist(db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error inserting data into the database: {str(e)}")
-    return {"message": "allow list data updated  successfully"}
+    return {"message": "Allow list data updated  successfully"}
 
 # Get an allowlist entry by ID
 @router.get("/allowlist/{allowlist_id}", response_model=schemas.AllowList)
