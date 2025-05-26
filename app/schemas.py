@@ -228,24 +228,24 @@ class Invoice(BaseModel):
 class Contact(BaseModel):
     contact_id: str
     contact_name: str
-    customer_name: str
-    vendor_name: str
-    company_name: str
-    website: str = ""
-    language_code: str = ""
-    language_code_formatted: str = ""
-    contact_type: str 
-    contact_type_formatted: str
+    # customer_name: str
+    # vendor_name: str
+    # company_name: str
+    # website: str = ""
+    # language_code: str = ""
+    # language_code_formatted: str = ""
+    # contact_type: str 
+    # contact_type_formatted: str
     status: str 
-    customer_sub_type: str 
-    source: str
-    is_linked_with_zohocrm: bool
-    payment_terms: int
-    payment_terms_label: str
-    currency_id: str
-    twitter: str = ""
-    facebook: str = ""
-    currency_code: str
+    # customer_sub_type: str 
+    # source: str
+    # is_linked_with_zohocrm: bool
+    # payment_terms: int
+    # payment_terms_label: str
+    # currency_id: str
+    # twitter: str = ""
+    # facebook: str = ""
+    # currency_code: str
     outstanding_receivable_amount: float
     outstanding_receivable_amount_bcy: float
     unused_credits_receivable_amount: float
@@ -256,21 +256,22 @@ class Contact(BaseModel):
     phone: str
     mobile: str
     portal_status: str  # Could use Literal["enabled", "disabled"]
-    portal_status_formatted: str
-    created_time: datetime
-    created_time_formatted: str
-    last_modified_time: datetime
-    last_modified_time_formatted: str
-    custom_fields: List[Dict] = []
-    custom_field_hash: Dict = {}
-    ach_supported: bool
-    has_attachment: bool
+    # portal_status_formatted: str
+    # created_time: datetime
+    # created_time_formatted: str
+    # last_modified_time: datetime
+    # last_modified_time_formatted: str
+    # custom_fields: List[Dict] = []
+    # custom_field_hash: Dict = {}
+    # ach_supported: bool
+    # has_attachment: bool
     address:Address
     invoices: List[Invoice] = []
     user_id: UUID = None
     delinquency_status: str  # Could use Literal["active", "inactive"]
     cf_lot_number: Optional[str] = None
     cf_street_name: Optional[str] = None
+    role: Optional[Role] = None
 
     class Config:
         json_encoders = {

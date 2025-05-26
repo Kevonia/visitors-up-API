@@ -478,7 +478,7 @@ def read_users_me(
                 "address": contact_address,
                 "invoices": contact_invoices,
                 "user_id": user.id,
-                "role": user.role.name if user.role else None  # Add role info
+                "role": user.role if user.role else None  # Add role info
             }
 
             logger.info(f"Successfully fetched details for user: {email}")
