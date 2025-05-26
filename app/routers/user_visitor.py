@@ -10,6 +10,21 @@ from ..logging_config import logger
 router = APIRouter()
 
 
+
+# Get all visitors of the seelcted in users
+@router.get("/visitors/{user_email}", response_model=list[schemas.Visitor])
+def read_visitors(user_email,skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
+    user = crud.get_user_by_email(db, email=user_email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.resident is None:
+        raise HTTPException(status_code=404, detail="Resident not found")
+
+    visitor = crud.get_visitors_by_resident(
+        db, user.resident.id, skip=skip, limit=limit)
+    if visitor is None:
+        raise HTTPException(status_code=404, detail="Visitor not found")
+    return visitor
 # Get all visitors of the logged in users
 @router.get("/visitors/", response_model=list[schemas.Visitor])
 def read_visitors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
