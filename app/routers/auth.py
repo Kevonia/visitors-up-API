@@ -355,7 +355,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
             # Create resident record
             resident_data = {
-                "lot_no": contact_address['cf_lot_number']['cf_street_name'],
+                "lot_no": f"{zoho_contact['cf_lot_number']} {zoho_contact['cf_street_name']}",
                 "status": "ACTIVE",
                 "delinquency_status": delinquency_status,
                 "user_id": db_user.id,

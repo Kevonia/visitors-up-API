@@ -269,6 +269,8 @@ class Contact(BaseModel):
     invoices: List[Invoice] = []
     user_id: UUID = None
     delinquency_status: str  # Could use Literal["active", "inactive"]
+    cf_lot_number: Optional[str] = None
+    cf_street_name: Optional[str] = None
 
     class Config:
         json_encoders = {
