@@ -200,6 +200,19 @@ def delete_allowlist(db: Session, allowlist_id: str):
         logger.warning(f"AllowList entry with ID {allowlist_id} not found")
     return db_allowlist.to_dict()
 
+def delete_all_allowlist(db: Session):
+    """Truncate the entire allowlist table"""
+    logger.info("Truncating all allowlist entries")
+    try:
+        # For SQLAlchemy 1.4+
+        deleted_count = db.query(models.AllowList).delete()
+        db.commit()
+        logger.info(f"Deleted {deleted_count} allowlist entries")
+        return {"status": "success", "deleted_count": deleted_count}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error truncating allowlist: {str(e)}")
+        return {"status": "error", "message": str(e)}
 # CRUD operations for Role
 def create_role(db: Session, role: schemas.RoleCreate):
     logger.info(f"Creating role with name: {role.name}")

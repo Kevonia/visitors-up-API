@@ -5,7 +5,7 @@ from .routers import user, resident, allowlist, role, permission, visitor,auth,u
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
 from fastapi.middleware.cors import CORSMiddleware
-from app.zoho_integration.routes import router as zoho_router
+from .zoho_integration.routes import router as zoho_router
 import time
 
 

@@ -1,2 +1,24 @@
-# .gitignore
+# Environment
 .env
+.env.local
+
+# Virtual environment
+venv/
+fastapi/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+
+# Database
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
