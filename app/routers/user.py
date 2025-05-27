@@ -1,5 +1,5 @@
 from typing import Optional
-from app.routers.auth import find_contact_by_email, find_invoices_by_email
+from app.routers.auth import find_contact_by_email
 from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
