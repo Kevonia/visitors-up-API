@@ -526,8 +526,9 @@ def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:
             )
 
         # Get invoices
-        invoices_data = zoho_client.make_request("invoices")
-        contact_invoices = invoices_sorted_and_filter(email, invoices_data)
+        invoices_data = zoho_client.make_request(f"invoices?customer_id={contact_id}")
+        contact_invoices = invoices_sorted_and_filter(invoices_data)
+        
         
         return addresses[0], contact_invoices
         
