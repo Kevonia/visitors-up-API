@@ -51,6 +51,21 @@ async def get_invoice(invoice_id: str, ):
         )
 
 
+@router.get("/invoices/customer/{customer_id}")
+@cached(ttl=cache_timer)
+async def get_invoiceby_customer(customer_id: str, ):
+    """Get a specific invoice by ID"""
+    try:
+        logger.info(f"Fetching invoice {customer_id} for user:")
+        return zoho_client.make_request(f"invoices?customer_id={customer_id}")
+    except Exception as e:
+        log_error(e, "get_invoice")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch invoice with ID {customer_id}",
+        )
+
+
 @router.post("/invoices")
 async def create_invoice(invoice_data: dict):
     """Create a new invoice in Zoho Invoice"""
@@ -107,9 +122,9 @@ async def get_users():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch users",
         )
- 
 
-#Contact
+
+# Contact
 @router.get("/contacts")
 @cached(ttl=cache_timer)
 async def get_contacts():

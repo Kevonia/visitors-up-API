@@ -9,7 +9,9 @@ from .zoho_integration.routes import router as zoho_router
 import time
 
 
-app = FastAPI()
+# app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
 
 
 
@@ -39,7 +41,7 @@ app.include_router(role.router, prefix="/api/v1", tags=["Role"])
 app.include_router(permission.router, prefix="/api/v1", tags=["Permission"])
 app.include_router(visitor.router, prefix="/api/v1", tags=["Visitor"])
 app.include_router(user_visitor.router, prefix="/api/v1/user", tags=["User Visitor"])
-# app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
+app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
 
 @app.on_event("startup")
 async def startup_event():

@@ -343,8 +343,9 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Email not found in our system. Please contact support.",
                 )
-            invoices_data = zoho_client.make_request("invoices")
-            contact_invoices = find_invoices_by_email(user.email, invoices_data.get('invoices', []))
+            invoices_data = zoho_client.make_request(f"invoices?customer_id={zoho_contact['contact_id']}")
+            
+            contact_invoices = invoices_data
             delinquency_status = "ACTIVE" if count_inactive_status(contact_invoices, "overdue") >= 3 else "INACTIVE"
             # Get address information
             contact_address = zoho_client.make_request(
@@ -526,7 +527,7 @@ def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:
 
         # Get invoices
         invoices_data = zoho_client.make_request("invoices")
-        contact_invoices = find_invoices_by_email(email, invoices_data.get('invoices', []))
+        contact_invoices = invoices_sorted_and_filter(email, invoices_data)
         
         return addresses[0], contact_invoices
         
@@ -547,21 +548,21 @@ def find_contact_by_email(email: str, contacts: list) -> Optional[dict]:
     )
 
 
-def find_invoices_by_email(email: str, invoices: list) -> list:
+def invoices_sorted_and_filter(invoices: list) -> list:
     """Find and sort invoices by email with validation"""
     if not invoices:
         return []
     
     try:
-        valid_invoices = [
-            inv for inv in invoices 
-            if inv.get('email', '').lower() == email.lower()
-            and inv.get('due_date') is not None
-        ]
+        # valid_invoices = [
+        #     inv for inv in invoices 
+        #     if inv.get('email', '').lower() == email.lower()
+        #     and inv.get('due_date') is not None
+        # ]
         
         # Sort by due_date descending and return max 6 invoices
         return sorted(
-            valid_invoices,
+            invoices,
             key=lambda x: x['due_date'],
             reverse=True
         )[:6]

@@ -26,8 +26,9 @@ def read_user(user_id: str, db: Session = Depends(get_db) , current_user: schema
 @router.get("/users/{user_id}/invoices", response_model=list[schemas.Invoice])
 def read_user(user_id: str, db: Session = Depends(get_db) , current_user: schemas.UserBase = Depends(get_current_user)):
     db_user = crud.get_user(db, user_id=user_id)
-    zoho_invoices=zoho_client.make_request("invoices") 
-    contact_invoices= find_invoices_by_email(current_user.email,zoho_invoices['invoices'])
+    zoho_contacts=zoho_client.make_request("contacts") 
+    contact_invoices= find_contact_by_email(current_user.email,zoho_invoices['contacts'])
+    zoho_invoices =zoho_client.make_request(f"invoices?customer_id={contact_invoices['contact_id']}")
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return contact_invoices

@@ -2,7 +2,7 @@
 import requests
 from fastapi import HTTPException, status
 from app.config.config import settings
-
+from app.logging_config import logger
 class ZohoClient:
     def __init__(self):
         self.access_token = settings.access_token
@@ -28,6 +28,7 @@ class ZohoClient:
             "Content-Type": "application/json"
         }
         url = f"{self.zoho_api_url}/{endpoint}"
+        logger.info(f"API endpoint:{url}")
         response = requests.request(method, url, headers=headers, json=data)
 
         if response.status_code == 401:  # Token expired
