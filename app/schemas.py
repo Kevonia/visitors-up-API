@@ -119,7 +119,7 @@ class Contact(BaseModel):
     # address:Address
     invoices: List[Invoice] = []
     user_id: UUID = None
-    # delinquency_status: str  # Could use Literal["active", "inactive"]
+    delinquency_status: Optional[str] =None  # Could use Literal["active", "inactive"]
     cf_lot_number: Optional[str] = None
     cf_street_name: Optional[str] = None
     role: Optional[str] = None
