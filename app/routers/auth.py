@@ -345,7 +345,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                 )
             invoices_data = zoho_client.make_request(f"invoices?customer_id={zoho_contact['contact_id']}")
             
-            contact_invoices = invoices_data
+            contact_invoices = invoices_data.get('invoices', [])
             delinquency_status = "ACTIVE" if count_inactive_status(contact_invoices, "overdue") >= 3 else "INACTIVE"
             # Get address information
             contact_address = zoho_client.make_request(
@@ -473,8 +473,7 @@ def read_users_me(
 
             # Parallelize these requests when possible
             contact_address, contact_invoices = get_zoho_supplementary_data(
-                zoho_contact['contact_id'],
-                user.email
+                zoho_contact['contact_id']
             )
 
             # Prepare response data
@@ -512,7 +511,7 @@ def read_users_me(
         )
 
 
-def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:
+def get_zoho_supplementary_data(contact_id: str) -> tuple:
     """Fetch address and invoices data from Zoho with error handling"""
     try:
         # Get address
@@ -527,7 +526,7 @@ def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:
 
         # Get invoices
         invoices_data = zoho_client.make_request(f"invoices?customer_id={contact_id}")
-        contact_invoices = invoices_sorted_and_filter(invoices_data)
+        contact_invoices = invoices_sorted_and_filter(invoices_data.get('invoices', [])) 
         
         
         return addresses[0], contact_invoices

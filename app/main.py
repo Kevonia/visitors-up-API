@@ -9,8 +9,8 @@ from .zoho_integration.routes import router as zoho_router
 import time
 
 
-# app = FastAPI()
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI()
+# app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 
