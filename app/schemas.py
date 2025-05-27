@@ -117,13 +117,14 @@ class Contact(BaseModel):
     # ach_supported: bool
     # has_attachment: bool
     # address:Address
+    cf_on_payment_plan: Optional[str] =None
     invoices: List[Invoice] = []
     user_id: UUID = None
     delinquency_status: Optional[str] =None  # Could use Literal["active", "inactive"]
     cf_lot_number: Optional[str] = None
     cf_street_name: Optional[str] = None
     role: Optional[str] = None
-
+    
     class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat()
