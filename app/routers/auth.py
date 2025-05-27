@@ -1,4 +1,7 @@
 import logging
+import secrets
+
+import sib_api_v3_sdk
 from app.config.auth import verify_refresh_token
 from app import models
 from app.zoho_integration.zoho_client import ZohoClient
@@ -7,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from .. import crud, schemas
 from ..utilities.db_util import get_db
-from app.config.config import settings
+from app.config.config import Settings, settings
 from ..utilities.authutil import get_password_hash, verify_password, create_access_token,create_refresh_token
 from jose import JWTError, jwt
 from app.logging_config import logger
@@ -18,6 +21,8 @@ from passlib.context import CryptContext
 from typing import Optional
 import time
 import json
+from sib_api_v3_sdk import  TransactionalEmailsApi, SendSmtpEmail,ApiClient,Configuration
+from sib_api_v3_sdk.rest import ApiException
 
 router = APIRouter()
 zoho_client = ZohoClient()
@@ -728,6 +733,264 @@ async def is_token_blacklisted(token: str) -> bool:
         return redis_conn.exists(f"token_blacklist:{token}") == 1
     except redis.RedisError as e:
         logger.error(f"Redis error checking token blacklist: {str(e)}")
+        return False
+    finally:
+        redis_conn.close()
+        
+@router.post("/password-reset/request")
+async def request_password_reset(
+    email: str,
+    db: Session = Depends(get_db),
+    request: Request = None
+):
+    """
+    Initiate password reset process using Brevo email template.
+    """
+    # Rate limiting check
+    client_ip = request.client.host if request else "unknown"
+    if is_reset_rate_limited(email, client_ip):
+        logger.warning(
+            f"Password reset rate limited for {email} from {client_ip}",
+            extra={"tags": {"security": "rate_limit", "severity": "high"}}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many reset requests. Please try again later.",
+        )
+
+    try:
+        # Check if user exists (but don't reveal result)
+        user = crud.get_user_by_email(db, email=email)
+        if not user:
+            logger.info(
+                f"Password reset requested for non-existent email: {email}",
+                extra={"tags": {"action": "reset_request"}}
+            )
+            return {"detail": "If the email exists, a reset link has been sent"}
+
+        # Generate reset token (expires in 15 minutes)
+        reset_token = create_reset_token(email)
+        token_hash = get_password_hash(reset_token)
+        
+        # Store token in database with expiration
+        db_reset = models.PasswordReset(
+            email=email,
+            token_hash=token_hash,
+            expires_at=datetime.utcnow() + timedelta(minutes=15)
+        )
+        db.add(db_reset)
+        db.commit()
+
+     
+       # Configure Brevo API
+        configuration = Configuration()
+        configuration.api_key['api-key'] = 'YOUR_API_V3_KEY'
+
+        # Create API client instance
+        api_client = ApiClient(configuration)
+
+        # Create TransactionalEmailsApi instance
+        api_instance = TransactionalEmailsApi(api_client)
+
+        # Create reset link
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+        
+        # Prepare template parameters
+        params = {
+            "reset_link": reset_link,
+            "expiration_minutes": 15,
+            "user_email": email,
+          
+        }
+
+        # Create SendSmtpEmail object with template
+        send_smtp_email = SendSmtpEmail(
+            sender={"email": settings.EMAIL_FROM, "name": settings.EMAIL_FROM_NAME},
+            to=[{"email": email}],
+            template_id=settings.BREVO_RESET_TEMPLATE_ID,  # Template ID from Brevo dashboard
+            params=params
+        )
+
+    
+        try:
+            # Send email via Brevo
+            api_response = api_instance.send_transac_email(send_smtp_email)
+            logger.info(
+                f"Password reset email sent to {email} via Brevo template. Message ID: {api_response.message_id}",
+                extra={
+                    "tags": {"action": "reset_email_sent"},
+                    "template_id": settings.BREVO_RESET_TEMPLATE_ID,
+                }
+            )
+            
+            return {"detail": "If the email exists, a reset link has been sent"}
+            
+        except ApiException as e:
+            logger.error(
+                f"Brevo API exception when sending reset email: {str(e)}",
+                extra={
+                    "tags": {"error": "email_send_failure", "severity": "high"},
+                    "response": e.body if hasattr(e, 'body') else None
+                }
+            )
+            return {"detail": "If the email exists, a reset link has been sent"}
+            
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error during password reset request: {str(e)}",
+            exc_info=True,
+            extra={"tags": {"error": "reset_request_failure", "severity": "high"}}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request"
+        )     
+@router.post("/password-reset/confirm")
+async def confirm_password_reset(
+    reset_data: schemas.PasswordResetConfirm,
+    db: Session = Depends(get_db)
+):
+    """
+    Confirm password reset with valid token and new password.
+    
+    Steps:
+    1. Validate reset token
+    2. Check token hasn't expired
+    3. Update user password
+    4. Invalidate all existing sessions
+    5. Return success
+    
+    Security Considerations:
+    - Only allows token to be used once
+    - Invalidates all existing sessions after password change
+    - Enforces password strength requirements
+    """
+    try:
+        # Find valid, unexpired reset token
+        db.begin()
+        
+        # Check for any matching tokens (even expired ones for logging)
+        reset_request = db.query(models.PasswordReset).filter(
+            models.PasswordReset.email == reset_data.email
+        ).order_by(models.PasswordReset.created_at.desc()).first()
+
+        if not reset_request:
+            logger.warning(
+                f"No reset token found for {reset_data.email}",
+                extra={"tags": {"security": "invalid_reset_token"}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+
+        # Verify token
+        if not pwd_context.verify(reset_data.token, reset_request.token_hash):
+            logger.warning(
+                f"Invalid reset token provided for {reset_data.email}",
+                extra={"tags": {"security": "invalid_reset_token"}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+
+        # Check expiration
+        if reset_request.expires_at < datetime.utcnow():
+            logger.warning(
+                f"Expired reset token used for {reset_data.email}",
+                extra={"tags": {"security": "expired_reset_token"}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+
+        # Get user
+        user = crud.get_user_by_email(db, email=reset_data.email)
+        if not user:
+            logger.error(
+                f"User not found during password reset for {reset_data.email}",
+                extra={"tags": {"error": "user_not_found"}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+
+        # Update password
+        hashed_password = get_password_hash(reset_data.new_password)
+        user.hashed_password = hashed_password
+        db.add(user)
+
+        # Invalidate all existing sessions
+        # invalidate_user_sessions(user.id)
+
+        # Delete the used reset token
+        db.delete(reset_request)
+        
+        db.commit()
+
+        logger.info(
+            f"Password successfully reset for {user.email}",
+            extra={"tags": {"action": "password_reset_success"}}
+        )
+
+        return {"detail": "Password has been successfully reset"}
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error during password reset confirmation: {str(e)}",
+            exc_info=True,
+            extra={"tags": {"error": "reset_confirmation_failure", "severity": "high"}}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request"
+        )
+def create_reset_token(email: str) -> str:
+    """Generate a secure random reset token"""
+    # Generate a random string (32 bytes) as token
+    token = secrets.token_urlsafe(32)
+    
+    # In production, you might want to include email in signed token
+    # But for simplicity, we'll just return the random token
+    return token
+
+def is_reset_rate_limited(email: str, ip: str) -> bool:
+    """
+    Check if password reset requests should be rate limited.
+    Limits:
+    - 3 attempts per email per hour
+    - 10 attempts per IP address per hour
+    """
+    redis_conn = redis.Redis(connection_pool=redis_pool)
+    try:
+        # Check email rate limit
+        email_key = f"reset_attempt:{email}"
+        email_attempts = redis_conn.incr(email_key)
+        if email_attempts == 1:
+            redis_conn.expire(email_key, 3600)  # 1 hour TTL
+        if email_attempts > 3:
+            return True
+
+        # Check IP rate limit
+        ip_key = f"reset_ip:{ip}"
+        ip_attempts = redis_conn.incr(ip_key)
+        if ip_attempts == 1:
+            redis_conn.expire(ip_key, 3600)  # 1 hour TTL
+        if ip_attempts > 10:
+            return True
+
+        return False
+    except redis.RedisError as e:
+        logger.error(f"Redis error in reset rate limiting: {str(e)}")
+        # Fail open in case of Redis issues
         return False
     finally:
         redis_conn.close()

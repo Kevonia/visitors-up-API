@@ -1,4 +1,5 @@
-from app.routers.auth import find_invoices_by_email
+from typing import Optional
+from app.routers.auth import find_contact_by_email, find_invoices_by_email
 from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -33,7 +34,12 @@ def read_user(user_id: str, db: Session = Depends(get_db) , current_user: schema
 # Get all users
 @router.get("/users/", response_model=list[schemas.User])
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
-    return crud.get_users(db, skip=skip, limit=limit)
+    users=crud.get_users(db, skip=skip, limit=limit)
+    zoho_contacts = zoho_client.make_request("contacts")
+    for user in users:
+     zoho_contact = find_contact_by_email(user.email, zoho_contacts.get('contacts', []))
+     user['contact'] = zoho_contact
+    return  users
 
 # Update a user
 @router.put("/users/{user_id}", response_model=schemas.User)
@@ -50,3 +56,5 @@ def delete_user(user_id: str, db: Session = Depends(get_db), current_user: schem
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
+
+

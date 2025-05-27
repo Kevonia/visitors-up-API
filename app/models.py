@@ -1,5 +1,6 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table,DateTime
 from sqlalchemy.orm import relationship
 from .database import Base
 import time
@@ -151,3 +152,15 @@ class Visitor(Base):
             "created_by": str(self.created_by),
             "created_by_user": self.created_by_user.to_dict() if self.created_by_user else None,  # Include user details
         }
+        
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+    
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, nullable=False, index=True)
+    token_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    
+    def __repr__(self):
+        return f"<PasswordReset {self.email}>"

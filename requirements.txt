@@ -28,7 +28,8 @@ aiocache==0.12.1
 # HTTP Clients
 requests==2.31.0
 httpx==0.26.0
-
+python-http-client==3.3.7
+sib-api-v3-sdk==7.6.0
 # Environment
 python-dotenv==1.0.0
 

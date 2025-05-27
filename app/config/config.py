@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     FAILED_LOGIN_RETENTION_DAYS: int = 30
     MAX_USER_ATTEMPTS: int = 5
     MAX_IP_ATTEMPTS: int = 20
+    
+    BREVO_API_KEY: str = Field(..., env="BREVO_API_KEY")
+    FRONTEND_URL: str = Field(..., env="FRONTEND_URL")
+    EMAIL_FROM: str = Field("no-reply@yourapp.com", env="EMAIL_FROM")
+    EMAIL_FROM_NAME: str = Field("Your App Name", env="EMAIL_FROM_NAME")
+    BREVO_RESET_TEMPLATE_ID : str = Field(..., env="BREVO_RESET_TEMPLATE_ID")
 
     class Config:
         env_file = ".env"
