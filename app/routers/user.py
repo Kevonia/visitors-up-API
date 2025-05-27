@@ -37,7 +37,7 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), c
     users=crud.get_users(db, skip=skip, limit=limit)
     zoho_contacts = zoho_client.make_request("contacts")
     for user in users:
-     zoho_contact = find_contact_by_email(user.email, zoho_contacts.get('contacts', []))
+     zoho_contact = find_contact_by_email(user['email'], zoho_contacts.get('contacts', []))
      user['contact'] = zoho_contact
     return  users
 

@@ -91,8 +91,8 @@ class Contact(BaseModel):
     # customer_sub_type: str 
     # source: str
     # is_linked_with_zohocrm: bool
-    # payment_terms: int
-    # payment_terms_label: str
+    payment_terms: int
+    payment_terms_label: str
     # currency_id: str
     # twitter: str = ""
     # facebook: str = ""
@@ -116,10 +116,10 @@ class Contact(BaseModel):
     # custom_field_hash: Dict = {}
     # ach_supported: bool
     # has_attachment: bool
-    address:Address
+    # address:Address
     invoices: List[Invoice] = []
     user_id: UUID = None
-    delinquency_status: str  # Could use Literal["active", "inactive"]
+    # delinquency_status: str  # Could use Literal["active", "inactive"]
     cf_lot_number: Optional[str] = None
     cf_street_name: Optional[str] = None
     role: Optional[str] = None
