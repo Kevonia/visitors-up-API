@@ -21,12 +21,13 @@ def create_user(db: Session, user: schemas.UserCreate):
        user.role_id = db_role.id
        
      # Ensure this is a string
-    if not db_allowlist:
-        logger.warning(f"Phone number {user.phone_number} not found in AllowList")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number not found in AllowList. User creation denied.",
-        )
+    if user.role_id == db_role.id:
+        if not db_allowlist:
+            logger.warning(f"Phone number {user.phone_number} not found in AllowList")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phone number not found in AllowList. User creation denied.",
+            )
     hashed_password = get_password_hash(user.password)
     # Create the user
     db_user = models.User(

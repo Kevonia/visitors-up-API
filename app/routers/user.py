@@ -12,7 +12,7 @@ router = APIRouter()
 zoho_client = ZohoClient()
 # Create a new user
 @router.post("/users/", response_model=schemas.User)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db) , current_user: schemas.UserBase = Depends(get_current_user)):
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db) ):
     return crud.create_user(db=db, user=user)
 
 # Get a user by ID
