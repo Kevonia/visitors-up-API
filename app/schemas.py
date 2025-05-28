@@ -87,7 +87,7 @@ class Contact(BaseModel):
     # language_code_formatted: str = ""
     # contact_type: str 
     # contact_type_formatted: str
-    status: Optional[str] 
+    status: Optional[str] =None
     # customer_sub_type: str 
     # source: str
     # is_linked_with_zohocrm: bool
