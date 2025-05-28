@@ -466,10 +466,10 @@ def read_users_me(
             
             if not zoho_contact:
                 logger.error(f"Zoho contact not found for email: {user.email}")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Contact information not found"
-                )
+                # raise HTTPException(
+                #     status_code=status.HTTP_404_NOT_FOUND,
+                #     detail="Contact information not found"
+                # )
 
             # Parallelize these requests when possible
             contact_address, contact_invoices = get_zoho_supplementary_data(
