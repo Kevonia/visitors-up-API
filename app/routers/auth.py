@@ -471,20 +471,29 @@ def read_users_me(
                 #     detail="Contact information not found"
                 # )
 
-            # Parallelize these requests when possible
-            contact_address, contact_invoices = get_zoho_supplementary_data(
-                zoho_contact['contact_id']
-            )
+                # Parallelize these requests when possible
+                contact_address, contact_invoices = get_zoho_supplementary_data(
+                    zoho_contact['contact_id']
+                )
 
-            # Prepare response data
-            response_data = {
-                **zoho_contact,
-                "delinquency_status": user.resident.delinquency_status, 
-                "address": contact_address,
-                "invoices": contact_invoices,
-                "user_id": user.id,
-                "role": user.role.name if user.role else None  # Add role info
-            }
+                # Prepare response data
+                response_data = {
+                    **zoho_contact,
+                    "delinquency_status": user.resident.delinquency_status, 
+                    "address": contact_address,
+                    "invoices": contact_invoices,
+                    "user_id": user.id,
+                    "role": user.role.name if user.role else None  # Add role info
+                }
+            else:
+                  response_data = {
+                    **[],
+                    "delinquency_status": user.resident.delinquency_status, 
+                    "address": None,
+                    "invoices":None,
+                    "user_id": user.id,
+                    "role": user.role.name if user.role else None  # Add role info
+                } 
 
             logger.info(f"Successfully fetched details for user: {email}")
             return response_data
