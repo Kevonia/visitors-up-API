@@ -52,7 +52,9 @@ def get_user(db: Session, user_id: str):
 
 def get_users(db: Session, skip: int = 0, limit: int = 100):
     logger.info(f"Fetching residents with skip: {skip}, limit: {limit}")
-    users = db.query(models.User).offset(skip).limit(limit).all()
+    role = db.query(models.Role).filter(models.Role.name == "USER").first()
+    users = db.query(models.User).filter(models.User.role_id == role.id).offset(skip).limit(limit).all()
+    
     return [user.to_dict() for user in users]  # Convert each instance to a dictionary
 
 def get_visitors(db: Session, skip: int = 0, limit: int = 100):
