@@ -479,7 +479,7 @@ def read_users_me(
                 # )
                 response_data = {
                     
-                    "delinquency_status": user.resident.delinquency_status,
+                    "delinquency_status":None,
                     "address": None,
                     "invoices": None,
                     "user_id": user.id,
