@@ -479,8 +479,8 @@ def read_users_me(
                 # )
                 response_data = {
                     
-                    "delinquency_status":"",
-                    "address": "",
+                    "delinquency_status":"INACTIVE",
+                    "address": "N/A",
                     "invoices": [],
                     "user_id": user.id,
                     "role": user.role.name if user.role else None  # Add role info
