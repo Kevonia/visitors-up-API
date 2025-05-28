@@ -77,8 +77,8 @@ class Invoice(BaseModel):
     # unprocessed_payment_amount: float
     
 class Contact(BaseModel):
-    contact_id: str
-    contact_name: str
+    contact_id: Optional[str] = None
+    contact_name: Optional[str] = None
     # customer_name: str
     # vendor_name: str
     # company_name: str
@@ -87,26 +87,26 @@ class Contact(BaseModel):
     # language_code_formatted: str = ""
     # contact_type: str 
     # contact_type_formatted: str
-    status: str 
+    status: Optional[str] 
     # customer_sub_type: str 
     # source: str
     # is_linked_with_zohocrm: bool
-    payment_terms: int
-    payment_terms_label: str
+    payment_terms: Optional[int] =None
+    payment_terms_label: Optional[str] =None
     # currency_id: str
     # twitter: str = ""
     # facebook: str = ""
     # currency_code: str
-    outstanding_receivable_amount: float
-    outstanding_receivable_amount_bcy: float
-    unused_credits_receivable_amount: float
-    unused_credits_receivable_amount_bcy: float
-    first_name: str
-    last_name: str
-    email: str
-    phone: str
-    mobile: str
-    portal_status: str  # Could use Literal["enabled", "disabled"]
+    outstanding_receivable_amount:  Optional[float] =None
+    outstanding_receivable_amount_bcy: Optional[float] =None
+    unused_credits_receivable_amount: Optional[float] =None
+    unused_credits_receivable_amount_bcy: Optional[float] =None
+    first_name: Optional[str]  =None
+    last_name: Optional[str]  =None
+    email: Optional[str]  =None
+    phone: Optional[str]  =None
+    mobile: Optional[str]  =None
+    portal_status: Optional[str]  =None  # Could use Literal["enabled", "disabled"]
     # portal_status_formatted: str
     # created_time: datetime
     # created_time_formatted: str

@@ -478,7 +478,7 @@ def read_users_me(
                 #     detail="Contact information not found"
                 # )
                 response_data = {
-                    **[],
+                    
                     "delinquency_status": user.resident.delinquency_status,
                     "address": None,
                     "invoices": None,
