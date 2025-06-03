@@ -8,11 +8,11 @@ from .logging_config import logger
 from fastapi.middleware.cors import CORSMiddleware
 from .zoho_integration.routes import router as zoho_router
 import time
-from fastapi_admin.app import app as admin_app
 # from fastapi_admin.app import app as admin_app
-from fastapi_admin.providers.login import UsernamePasswordProvider
+# from fastapi_admin.app import app as admin_app
+# from fastapi_admin.providers.login import UsernamePasswordProvider
 from app.models import User
-import aioredis
+# import aioredis
 from app.config.config import  settings
 # app = FastAPI()
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
