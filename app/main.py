@@ -9,21 +9,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from .zoho_integration.routes import router as zoho_router
 import time
 from fastapi_admin.app import app as admin_app
-from fastapi_admin.app import app as admin_app
+# from fastapi_admin.app import app as admin_app
 from fastapi_admin.providers.login import UsernamePasswordProvider
 from app.models import User
 import aioredis
 from app.config.config import  settings
 # app = FastAPI()
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-app.mount("/admin", admin_app)
+# app.mount("/admin", admin_app)
 
 
-login_provider = UsernamePasswordProvider(
-    admin_model=User,
-    # enable_captcha=True,
-    login_logo_url="https://preview.tabler.io/static/logo.svg"
-)
+# login_provider = UsernamePasswordProvider(
+#     admin_model=User,
+#     # enable_captcha=True,
+#     login_logo_url="https://preview.tabler.io/static/logo.svg"
+# )
 
 
 origins = ["*"]
@@ -52,18 +52,18 @@ app.include_router(role.router, prefix="/api/v1", tags=["Role"])
 app.include_router(permission.router, prefix="/api/v1", tags=["Permission"])
 app.include_router(visitor.router, prefix="/api/v1", tags=["Visitor"])
 app.include_router(user_visitor.router, prefix="/api/v1/user", tags=["User Visitor"])
-app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
+# app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
 
 @app.on_event("startup")
 async def startup_event():
     
-    redis = await  aioredis.Redis.from_url(settings.REDIS_URL, encoding="utf8")
-    admin_app.configure(
-        logo_url="https://preview.tabler.io/static/logo-white.svg",
-        template_folders=[os.path.join(os.path.dirname(__file__), "templates")],
-        providers=[login_provider],
-        redis=redis,
-    )
+    # redis = await  aioredis.Redis.from_url(settings.REDIS_URL, encoding="utf8")
+    # admin_app.configure(
+    #     logo_url="https://preview.tabler.io/static/logo-white.svg",
+    #     template_folders=[os.path.join(os.path.dirname(__file__), "templates")],
+    #     providers=[login_provider],
+    #     redis=redis,
+    # )
     # seed_roles()
     # seed_permissions()
     # await init_cache()
