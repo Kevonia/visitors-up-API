@@ -10,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from .. import crud, schemas
 from ..utilities.db_util import get_db
-from app.config.config import Settings, settings
+from app.config.config import  settings
 from ..utilities.authutil import get_password_hash, verify_password, create_access_token, create_refresh_token
 from jose import JWTError, jwt
 from app.logging_config import logger
@@ -806,7 +806,7 @@ async def request_password_reset(
 
        # Configure Brevo API
         configuration = Configuration()
-        configuration.api_key['api-key'] = 'YOUR_API_V3_KEY'
+        configuration.api_key['api-key'] = settings.BREVO_API_KEY
 
         # Create API client instance
         api_client = ApiClient(configuration)

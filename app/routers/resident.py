@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app.decorator.auth_decorator import admin_required
 from .. import schemas, crud
 from ..database import SessionLocal
 from ..utilities.db_util import get_db
@@ -14,6 +16,7 @@ cache_timer =60
 
 # Create a new resident
 @router.post("/residents/", response_model=schemas.Resident)
+@admin_required
 def create_resident(resident: schemas.ResidentCreate, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     return crud.create_resident(db=db, resident=resident)
 
@@ -40,6 +43,7 @@ def update_resident(resident_id: str, resident: schemas.ResidentUpdate, db: Sess
 
 # Delete a resident
 @router.delete("/residents/{resident_id}", response_model=schemas.Resident)
+@admin_required
 def delete_resident(resident_id: str, db: Session = Depends(get_db) , current_user: schemas.UserBase = Depends(get_current_user)):
     db_resident = crud.delete_resident(db, resident_id=resident_id)
     if db_resident is None:

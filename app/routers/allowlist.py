@@ -16,7 +16,7 @@ cache_timer =60
 
 # Create a new allowlist entry
 @router.post("/allowlist/")
-@cached(ttl=cache_timer)
+# @cached(ttl=cache_timer)
 @admin_required
 def create_allowlist(allowlist: schemas.AllowListCreate, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     return crud.create_allowlist(db=db, allowlist=allowlist)
@@ -84,7 +84,8 @@ def read_allowlist(allowlist_id: str, db: Session = Depends(get_db),current_user
 
 # Get all allowlist entries
 @router.get("/allowlist/", response_model=list[schemas.AllowList])
-@cached(ttl=cache_timer)
+# @cached(ttl=cache_timer)
+@admin_required
 def read_all_allowlists(skip: int = 0, limit: int = 100, db: Session = Depends(get_db) , current_user: schemas.UserBase = Depends(get_current_user)):
     return crud.get_all_allowlists(db, skip=skip, limit=limit)
 
