@@ -11,7 +11,7 @@ import time
 # from fastapi_admin.app import app as admin_app
 # from fastapi_admin.app import app as admin_app
 # from fastapi_admin.providers.login import UsernamePasswordProvider
-from app.models import User
+# from app.models import User
 # import aioredis
 from app.config.config import  settings
 # app = FastAPI()

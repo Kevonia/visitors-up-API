@@ -1,8 +1,10 @@
-# app/schemas.py
-from pydantic import BaseModel
+
+from pydantic import BaseModel, EmailStr, Field, validator
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID  # Import UUID
+
+
 
 
 class Address(BaseModel):
@@ -253,7 +255,6 @@ class Visitor(VisitorBase):
 class UserBase(BaseModel):
     email: str
     phone_number: str
-    role_id: Optional[str]  = None
 
 class UserCreate(UserBase):
     password: str
@@ -279,6 +280,20 @@ class User(UserBase):
         }
 
 
+class Tenant(UserBase):
+    id: str
+    role:Optional[Role] =None
+    resident:Optional[Resident] =None
+    created_at: datetime
+    updated_at: datetime
+    contact: Optional[Contact] = None  # Assuming a user can have multiple contacts
+
+    class Config:
+        orm_mode = True
+        json_encoders = {
+            UUID: lambda v: str(v),  # Convert UUID to string
+        }
+
     
 
         
@@ -303,3 +318,48 @@ class PasswordResetConfirm(BaseModel):
     email: str
     token: str
     new_password: str  # Add regex pattern for password strength
+    
+    
+class TenantCreate(BaseModel):
+    name: str
+    email: EmailStr
+    phone_number: str
+    number_of_children: Optional[int] = 0
+    resident_id: UUID
+
+    @validator('phone_number')
+    def validate_phone_number(cls, v):
+        # Add phone number validation logic if needed
+        if not v.startswith('+'):
+            raise ValueError('Phone number should start with country code')
+        return v
+
+class TenantUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    number_of_children: Optional[int] = None
+    resident_id: Optional[UUID] = None
+
+    @validator('phone_number')
+    def validate_phone_number(cls, v):
+        if v is not None and not v.startswith('+'):
+            raise ValueError('Phone number should start with country code')
+        return v
+
+class TenantOut(BaseModel):
+    id: UUID
+    name: str
+    email: EmailStr
+    phone_number: str
+    number_of_children: int
+    resident_id: UUID
+    resident: Optional[ResidentBase] = None
+    # created_at: int = Field(default_factory=lambda: int(time.time()))
+    # updated_at: int = Field(default_factory=lambda: int(time.time()))
+
+    class Config:
+        orm_mode = True
+        json_encoders = {
+            UUID: lambda v: str(v),  # Convert UUID to string
+        }
