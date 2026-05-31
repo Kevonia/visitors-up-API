@@ -1,5 +1,10 @@
 version: '3.8'
 
+# Full local stack: FastAPI + Postgres + Redis + the admin web app.
+#   docker compose up --build
+# Postgres/Redis credentials fall back to sensible defaults, so this works even
+# with a blank .env. Secrets (Zoho, SECRET_KEY) are still read from api/.env.
+
 services:
   web:
     build: .
@@ -7,30 +12,65 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-    # depends_on:
-    #   - db
-    #   - redis
     env_file:
       - .env
+    # Override connection settings so the API talks to the compose db/redis,
+    # regardless of what .env points at. These take precedence over env_file.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
+      POSTGRES_DB: ${POSTGRES_DB:-vms}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@db:5432/${POSTGRES_DB:-vms}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-  # db:
-  #   image: postgres:13
-  #   env_file:
-  #     - .env
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
+      POSTGRES_DB: ${POSTGRES_DB:-vms}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vms} -d ${POSTGRES_DB:-vms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  # redis:
-  #   image: redis:6
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  admin:
+    build:
+      context: ../admin
+      args:
+        # Baked into the JS bundle; points at the API on the host.
+        VITE_API_BASE_URL: http://localhost:8000/api
+    ports:
+      - "8080:80"
+    depends_on:
+      - web
 
 volumes:
   postgres_data:

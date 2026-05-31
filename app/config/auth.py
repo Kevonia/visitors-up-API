@@ -13,12 +13,31 @@ from pydantic import BaseModel
 from app.logging_config import logger
 # Load settings
 from app.config .config import settings
+import redis
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# Shared Redis pool for token-blacklist checks (logout invalidates tokens here)
+_redis_pool = redis.ConnectionPool.from_url(
+    settings.REDIS_URL, max_connections=10, decode_responses=True
+)
+
+
+def _is_token_blacklisted(token: str) -> bool:
+    """Check whether a token was invalidated via /logout. Fails open on Redis error."""
+    try:
+        conn = redis.Redis(connection_pool=_redis_pool)
+        try:
+            return conn.exists(f"token_blacklist:{token}") == 1
+        finally:
+            conn.close()
+    except redis.RedisError as e:
+        logger.error(f"Redis error checking token blacklist: {str(e)}")
+        return False
 
 # User model
 class User(BaseModel):
@@ -63,6 +82,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme) ,db: Session = De
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        # Reject tokens that were invalidated on logout
+        if _is_token_blacklisted(token):
+            logger.warning("Rejected blacklisted (logged-out) token")
+            raise credentials_exception
+
         # Decode the JWT token
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         email: str = payload.get("sub")
@@ -75,9 +99,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme) ,db: Session = De
         if user is None:
             logger.warning(f"User not found for email: {email}")
             raise credentials_exception
-            
+
         return user  # Return a User object
-        
+
     except JWTError as e:
         logger.error(f"JWT error while decoding token: {str(e)}", exc_info=True)
         raise credentials_exception
@@ -111,3 +135,29 @@ def verify_refresh_token(token: str):
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def require_roles(*allowed_roles: str):
+    """Dependency factory enforcing that the current user has one of the given roles.
+
+    Usage:
+        @router.get(..., dependencies=[Depends(require_roles("ADMIN"))])
+        def handler(user = Depends(require_roles("SECURITY", "ADMIN"))):
+            ...
+    """
+    allowed = {r.upper() for r in allowed_roles}
+
+    async def _checker(current_user=Depends(get_current_user)):
+        role_name = (current_user.role.name if current_user.role else "") or ""
+        if role_name.upper() not in allowed:
+            logger.warning(
+                f"Forbidden: user {getattr(current_user, 'email', '?')} role "
+                f"'{role_name}' not in {sorted(allowed)}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to access this resource.",
+            )
+        return current_user
+
+    return _checker

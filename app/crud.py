@@ -312,6 +312,11 @@ def create_visitor(db: Session, visitor: schemas.VisitorCreate):
         name=visitor.name,
         relationship_type=visitor.relationship_type,
         created_by=visitor.created_by,
+        visit_type=visitor.visit_type or models.VisitType.ONE_TIME,
+        valid_from=visitor.valid_from,
+        valid_until=visitor.valid_until,
+        phone=visitor.phone,
+        vehicle_plate=visitor.vehicle_plate,
     )
     db.add(db_visitor)
     db.commit()
@@ -348,6 +353,18 @@ def update_visitor(db: Session, visitor_id: str, visitor: schemas.VisitorUpdate)
             db_visitor.relationship_type = visitor.relationship_type
         if visitor.created_by:
             db_visitor.created_by = visitor.created_by
+        if visitor.visit_type:
+            db_visitor.visit_type = visitor.visit_type
+        if visitor.status:
+            db_visitor.status = visitor.status
+        if visitor.valid_from is not None:
+            db_visitor.valid_from = visitor.valid_from
+        if visitor.valid_until is not None:
+            db_visitor.valid_until = visitor.valid_until
+        if visitor.phone is not None:
+            db_visitor.phone = visitor.phone
+        if visitor.vehicle_plate is not None:
+            db_visitor.vehicle_plate = visitor.vehicle_plate
         db.commit()
         db.refresh(db_visitor)
         logger.info(f"Visitor updated successfully: {db_visitor.id}")

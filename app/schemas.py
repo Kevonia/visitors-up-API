@@ -105,8 +105,15 @@ class Permission(PermissionBase):
 class VisitorBase(BaseModel):
     name: str
     relationship_type: str
-    created_by: str
-    created_by_user: Optional[Resident] = None# Ensure this is a string
+    # created_by is optional on input: the /user/visitors route fills it from
+    # the authenticated resident. Admin routes may pass it explicitly.
+    created_by: Optional[str] = None
+    visit_type: Optional[str] = "ONE_TIME"
+    valid_from: Optional[int] = None
+    valid_until: Optional[int] = None
+    phone: Optional[str] = None
+    vehicle_plate: Optional[str] = None
+    created_by_user: Optional[Resident] = None
 
 class VisitorCreate(VisitorBase):
     pass
@@ -115,10 +122,17 @@ class VisitorUpdate(BaseModel):
     name: Optional[str] = None
     relationship_type: Optional[str] = None
     created_by: Optional[str] = None
-    
+    visit_type: Optional[str] = None
+    status: Optional[str] = None
+    valid_from: Optional[int] = None
+    valid_until: Optional[int] = None
+    phone: Optional[str] = None
+    vehicle_plate: Optional[str] = None
+
 
 class Visitor(VisitorBase):
     id: str  # Ensure this is a string
+    status: Optional[str] = None
     date_created: datetime
 
     class Config:
@@ -126,6 +140,57 @@ class Visitor(VisitorBase):
         json_encoders = {
             UUID: lambda v: str(v),  # Convert UUID to string
         }
+
+
+# Gate / visit-log schemas
+class GateEntryCreate(BaseModel):
+    visitor_id: str
+    notes: Optional[str] = None
+
+
+class GateEntry(BaseModel):
+    id: str
+    visitor_id: Optional[str] = None
+    visitor_name: Optional[str] = None
+    relationship_type: Optional[str] = None
+    visit_type: Optional[str] = None
+    resident_id: Optional[str] = None
+    lot_no: Optional[str] = None
+    logged_by: Optional[str] = None
+    logged_by_email: Optional[str] = None
+    entry_time: int
+    exit_time: Optional[int] = None
+    is_on_site: bool
+    notes: Optional[str] = None
+
+
+class GateVisitorSearchResult(BaseModel):
+    id: str
+    name: str
+    relationship_type: str
+    visit_type: Optional[str] = None
+    status: Optional[str] = None
+    valid_from: Optional[int] = None
+    valid_until: Optional[int] = None
+    phone: Optional[str] = None
+    vehicle_plate: Optional[str] = None
+    lot_no: Optional[str] = None
+    resident_id: Optional[str] = None
+
+
+# Guard account schemas
+class GuardCreate(BaseModel):
+    email: str
+    phone_number: str
+    password: str
+
+
+class Guard(BaseModel):
+    id: str
+    email: str
+    phone_number: str
+    role: Optional[str] = None
+    created_at: datetime
 # User schemas
 class UserBase(BaseModel):
     email: str

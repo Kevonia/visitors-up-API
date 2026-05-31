@@ -1,41 +1,216 @@
 # zoho_integration/zoho_client.py
-import requests
+"""Resilient Zoho Invoice client.
+
+Improvements over the original:
+- Access token is shared across workers via Redis (key ``zoho:access_token``)
+  and refreshed proactively, not just reactively on a 401.
+- Uses ``httpx`` with timeouts + retry/backoff on 429/5xx.
+- Typed, *filtered* helpers (``?email=`` / ``?customer_id=``) so we stop pulling
+  the entire contact and invoice lists and scanning them in Python.
+- Per-resource response caching in Redis, plus lightweight call/cache metrics.
+"""
+import json
+import time
+import logging
+
+import httpx
+import redis
+
 from fastapi import HTTPException, status
 from app.config.config import settings
 
+logger = logging.getLogger(__name__)
+
+# Redis keys
+TOKEN_KEY = "zoho:access_token"
+TOKEN_TTL = 3300  # refresh a little before Zoho's ~3600s expiry
+METRIC_CALLS = "zoho:metrics:api_calls"
+METRIC_CACHE_HITS = "zoho:metrics:cache_hits"
+
+# Cache TTLs (seconds)
+CONTACT_TTL = 6 * 3600
+ADDRESS_TTL = 6 * 3600
+INVOICE_TTL = 3600
+
+_TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
+
+
 class ZohoClient:
     def __init__(self):
-        self.access_token = settings.access_token
         self.zoho_api_url = settings.zoho_api_url
+        self._redis = redis.Redis.from_url(
+            settings.REDIS_URL, max_connections=10, decode_responses=True
+        )
+        self._http = httpx.Client(timeout=httpx.Timeout(15.0))
 
-    def refresh_access_token(self):
-        url = "https://accounts.zoho.com/oauth/v2/token"
+    # -- token management ---------------------------------------------------
+    def _get_token(self) -> str:
+        """Return a cached access token, seeding from .env or refreshing as needed."""
+        try:
+            token = self._redis.get(TOKEN_KEY)
+            if token:
+                return token
+        except redis.RedisError as e:
+            logger.error(f"Redis error reading Zoho token: {e}")
+
+        # Seed once from the env-provided token, then rely on refresh.
+        if settings.access_token:
+            self._store_token(settings.access_token)
+            return settings.access_token
+        return self.refresh_access_token()
+
+    def _store_token(self, token: str, ttl: int = TOKEN_TTL):
+        try:
+            self._redis.set(TOKEN_KEY, token, ex=ttl)
+        except redis.RedisError as e:
+            logger.error(f"Redis error storing Zoho token: {e}")
+
+    def refresh_access_token(self) -> str:
         payload = {
             "refresh_token": settings.refresh_token,
             "client_id": settings.client_id,
             "client_secret": settings.client_secret,
-            "grant_type": "refresh_token"
+            "grant_type": "refresh_token",
         }
-        response = requests.post(url, data=payload)
-        if response.status_code == 200:
-            self.access_token = response.json()["access_token"]
-        else:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Failed to refresh access token")
+        resp = self._http.post(_TOKEN_URL, data=payload)
+        if resp.status_code != 200:
+            logger.error(f"Zoho token refresh failed: {resp.status_code} {resp.text}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Failed to refresh Zoho access token",
+            )
+        body = resp.json()
+        token = body["access_token"]
+        ttl = int(body.get("expires_in", 3600)) - 300
+        self._store_token(token, ttl=max(ttl, 60))
+        logger.info("Refreshed Zoho access token")
+        return token
 
-    def make_request(self, endpoint, method="GET", data=None):
-        headers = {
-            "Authorization": f"Zoho-oauthtoken {self.access_token}",
-            "Content-Type": "application/json"
-        }
+    # -- low-level request --------------------------------------------------
+    def make_request(self, endpoint, method="GET", data=None, params=None):
+        """Call the Zoho API with auth, retry/backoff and a single 401 refresh."""
         url = f"{self.zoho_api_url}/{endpoint}"
-        response = requests.request(method, url, headers=headers, json=data)
+        token = self._get_token()
+        backoff = 0.5
 
-        if response.status_code == 401:  # Token expired
-            self.refresh_access_token()
-            headers["Authorization"] = f"Zoho-oauthtoken {self.access_token}"
-            response = requests.request(method, url, headers=headers, json=data)
+        for attempt in range(4):
+            headers = {
+                "Authorization": f"Zoho-oauthtoken {token}",
+                "Content-Type": "application/json",
+            }
+            try:
+                self._incr(METRIC_CALLS)
+                resp = self._http.request(method, url, headers=headers, json=data, params=params)
+            except httpx.HTTPError as e:
+                logger.warning(f"Zoho transport error ({attempt}): {e}")
+                time.sleep(backoff)
+                backoff *= 2
+                continue
 
-        if response.status_code not in [200, 201]:
-            raise HTTPException(status_code=response.status_code, detail=response.json())
+            if resp.status_code == 401:  # token expired -> refresh once and retry
+                token = self.refresh_access_token()
+                continue
+            if resp.status_code == 429 or resp.status_code >= 500:
+                logger.warning(f"Zoho {resp.status_code}; retrying in {backoff}s")
+                time.sleep(backoff)
+                backoff *= 2
+                continue
+            if resp.status_code not in (200, 201):
+                raise HTTPException(status_code=resp.status_code, detail=resp.text)
+            return resp.json()
 
-        return response.json()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Zoho API is currently unavailable. Please try again later.",
+        )
+
+    # -- caching helpers ----------------------------------------------------
+    def _incr(self, key: str):
+        try:
+            self._redis.incr(key)
+        except redis.RedisError:
+            pass
+
+    def _cache_get(self, key: str):
+        try:
+            raw = self._redis.get(key)
+            if raw is not None:
+                self._incr(METRIC_CACHE_HITS)
+                return json.loads(raw)
+        except (redis.RedisError, json.JSONDecodeError) as e:
+            logger.error(f"Zoho cache read error for {key}: {e}")
+        return None
+
+    def _cache_set(self, key: str, value, ttl: int):
+        try:
+            self._redis.set(key, json.dumps(value), ex=ttl)
+        except redis.RedisError as e:
+            logger.error(f"Zoho cache write error for {key}: {e}")
+
+    def invalidate(self, *patterns: str):
+        """Delete cached Zoho keys (used by the admin sync/cache-bust)."""
+        try:
+            for pattern in patterns or ("zoho:cache:*",):
+                for k in self._redis.scan_iter(match=pattern):
+                    self._redis.delete(k)
+        except redis.RedisError as e:
+            logger.error(f"Zoho cache invalidate error: {e}")
+
+    # -- filtered, cached resource accessors --------------------------------
+    def get_contact_by_email(self, email: str):
+        """Fetch a single contact via the server-side ``?email=`` filter."""
+        key = f"zoho:cache:contact:{email.lower()}"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached or None
+        data = self.make_request("contacts", params={"email": email})
+        contacts = data.get("contacts", []) if isinstance(data, dict) else []
+        contact = next(
+            (c for c in contacts if c.get("email", "").lower() == email.lower()),
+            contacts[0] if contacts else None,
+        )
+        self._cache_set(key, contact or {}, CONTACT_TTL)
+        return contact
+
+    def get_contact_address(self, contact_id: str):
+        key = f"zoho:cache:address:{contact_id}"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        data = self.make_request(f"contacts/{contact_id}/address")
+        addresses = data.get("addresses", []) if isinstance(data, dict) else []
+        self._cache_set(key, addresses, ADDRESS_TTL)
+        return addresses
+
+    def get_invoices_for_contact(self, contact_id: str):
+        key = f"zoho:cache:invoices:contact:{contact_id}"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        data = self.make_request("invoices", params={"customer_id": contact_id})
+        invoices = data.get("invoices", []) if isinstance(data, dict) else []
+        self._cache_set(key, invoices, INVOICE_TTL)
+        return invoices
+
+    def get_invoices_by_email(self, email: str):
+        key = f"zoho:cache:invoices:email:{email.lower()}"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        data = self.make_request("invoices", params={"email": email})
+        invoices = data.get("invoices", []) if isinstance(data, dict) else []
+        self._cache_set(key, invoices, INVOICE_TTL)
+        return invoices
+
+    def metrics(self) -> dict:
+        try:
+            calls = int(self._redis.get(METRIC_CALLS) or 0)
+            hits = int(self._redis.get(METRIC_CACHE_HITS) or 0)
+        except redis.RedisError:
+            calls, hits = 0, 0
+        total = calls + hits
+        return {
+            "api_calls": calls,
+            "cache_hits": hits,
+            "cache_hit_ratio": round(hits / total, 3) if total else 0.0,
+        }

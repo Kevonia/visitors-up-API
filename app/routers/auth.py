@@ -327,10 +327,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
             
             
             
-            # Get Zoho contact information
-            zoho_contacts = zoho_client.make_request("contacts")
-            zoho_contact = find_contact_by_email(
-                user.email, zoho_contacts['contacts'])
+            # Get Zoho contact information (filtered server-side by email)
+            zoho_contact = zoho_client.get_contact_by_email(user.email)
 
             if not zoho_contact:
                 logger.error(f"Zoho contact not found for email: {user.email}")
@@ -338,14 +336,13 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Email not found in our system. Please contact support.",
                 )
-            invoices_data = zoho_client.make_request("invoices")
-            contact_invoices = find_invoices_by_email(user.email, invoices_data.get('invoices', []))
+            # Invoices for just this contact, then derive delinquency once.
+            contact_invoices = zoho_client.get_invoices_for_contact(zoho_contact['contact_id'])
             delinquency_status = "ACTIVE" if count_inactive_status(contact_invoices, "overdue") >= 3 else "INACTIVE"
             # Get address information
-            contact_address = zoho_client.make_request(
-                f"contacts/{zoho_contact['contact_id']}/address")
+            addresses = zoho_client.get_contact_address(zoho_contact['contact_id'])
 
-            if not contact_address.get('addresses'):
+            if not addresses:
                 logger.error(
                     f"No address found for Zoho contact: {zoho_contact['contact_id']}")
                 raise HTTPException(
@@ -355,7 +352,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
             # Create resident record
             resident_data = {
-                "lot_no": contact_address['addresses'][0]['attention'],
+                "lot_no": addresses[0]['attention'],
                 "status": "ACTIVE",
                 "delinquency_status": delinquency_status,
                 "user_id": db_user.id,
@@ -453,11 +450,13 @@ def read_users_me(
 
         logger.debug(f"Fetching Zoho data for user: {email}")
         
-        # Get Zoho contact information with error handling
+        # Get Zoho contact information with error handling.
+        # All calls are filtered server-side and Redis-cached, so the common
+        # case serves from cache without hitting Zoho. Delinquency comes from
+        # the DB (Resident), not a live full-invoice scan.
         try:
-            zoho_contacts = zoho_client.make_request("contacts")
-            zoho_contact = find_contact_by_email(user.email, zoho_contacts.get('contacts', []))
-            
+            zoho_contact = zoho_client.get_contact_by_email(user.email)
+
             if not zoho_contact:
                 logger.error(f"Zoho contact not found for email: {user.email}")
                 raise HTTPException(
@@ -465,7 +464,6 @@ def read_users_me(
                     detail="Contact information not found"
                 )
 
-            # Parallelize these requests when possible
             contact_address, contact_invoices = get_zoho_supplementary_data(
                 zoho_contact['contact_id'],
                 user.email
@@ -507,11 +505,10 @@ def read_users_me(
 
 
 def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:
-    """Fetch address and invoices data from Zoho with error handling"""
+    """Fetch address and invoices for one contact (filtered + cached)."""
     try:
-        # Get address
-        address_data = zoho_client.make_request(f"contacts/{contact_id}/address")
-        addresses = address_data.get('addresses', [])
+        # Address (cached per contact)
+        addresses = zoho_client.get_contact_address(contact_id)
         if not addresses:
             logger.warning(f"No address found for contact: {contact_id}")
             raise HTTPException(
@@ -519,12 +516,12 @@ def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:
                 detail="Address information not found"
             )
 
-        # Get invoices
-        invoices_data = zoho_client.make_request("invoices")
-        contact_invoices = find_invoices_by_email(email, invoices_data.get('invoices', []))
-        
+        # Invoices for just this contact (cached), then sort + cap to 6.
+        invoices = zoho_client.get_invoices_for_contact(contact_id)
+        contact_invoices = find_invoices_by_email(email, invoices)
+
         return addresses[0], contact_invoices
-        
+
     except Exception as e:
         logger.error(f"Failed to get supplementary Zoho data: {str(e)}")
         raise

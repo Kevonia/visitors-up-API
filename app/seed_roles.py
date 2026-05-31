@@ -8,27 +8,24 @@ def seed_roles():
     db = SessionLocal()
 
     try:
-        # Check if roles already exist
-        existing_roles = db.query(Role).count()
-        if existing_roles > 0:
-            print("Roles already seeded. Skipping.")
-            return
-
-        # Define the roles to seed
+        # Define the roles to seed (idempotent: only inserts missing ones)
         roles_to_seed = [
-            {"name": RoleEnum.ADMIN, "description": "Administrator role"},
-            {"name": RoleEnum.MANAGER, "description": "Manager role"},
-            {"name": RoleEnum.USER, "description": "Regular user role"},
+            {"name": RoleEnum.ADMIN.value, "description": "Administrator role"},
+            {"name": RoleEnum.MANAGER.value, "description": "Manager role"},
+            {"name": RoleEnum.USER.value, "description": "Resident / regular user role"},
+            {"name": RoleEnum.SECURITY.value, "description": "Security guard role"},
         ]
 
-        # Create Role objects and add them to the session
+        created = 0
         for role_data in roles_to_seed:
-            role = Role(**role_data)
-            db.add(role)
+            exists = db.query(Role).filter(Role.name == role_data["name"]).first()
+            if not exists:
+                db.add(Role(**role_data))
+                created += 1
 
         # Commit the changes to the database
         db.commit()
-        print("Roles seeded successfully.")
+        print(f"Roles seeded successfully ({created} new).")
     except Exception as e:
         print(f"Error seeding roles: {e}")
         db.rollback()
