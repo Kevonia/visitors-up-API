@@ -8,8 +8,10 @@ version: '3.8'
 services:
   web:
     build: .
+    # Host port is configurable to avoid clashes with other local services.
+    # e.g. API_PORT=8001 docker compose up
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     volumes:
       - .:/app
     env_file:
@@ -66,7 +68,7 @@ services:
       context: ../admin
       args:
         # Baked into the JS bundle; points at the API on the host.
-        VITE_API_BASE_URL: http://localhost:8000/api
+        VITE_API_BASE_URL: http://localhost:${API_PORT:-8000}/api
     ports:
       - "8080:80"
     depends_on:
