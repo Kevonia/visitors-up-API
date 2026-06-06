@@ -1,17 +1,23 @@
 import logging
-from fastapi import FastAPI, Response, Request, Depends
+import time
+import uuid
+
+from fastapi import FastAPI, Response, Request, Depends, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
 from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements
 from .seed_roles import seed_roles  # Import the roles seeder function
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
-from fastapi.middleware.cors import CORSMiddleware
 from app.zoho_integration.routes import router as zoho_router
 from app.config.auth import require_roles
 from app.enums import RoleEnum
-import time
 
 
-app = FastAPI()
+app = FastAPI(title="Twickenham Glades API")
 
 # Role groups for route-level authorization
 admin_only = require_roles(RoleEnum.ADMIN.value)
@@ -30,12 +36,66 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.perf_counter()
-    response = await call_next(request)
-    process_time = time.perf_counter() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
+async def request_context(request: Request, call_next):
+    """Tag every request with an id, time it, log the outcome, and ensure any
+    unhandled error becomes a clean, traceable 500 (never a leaked stack)."""
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed = (time.perf_counter() - start) * 1000
+        logger.exception(
+            f"[{request_id}] {request.method} {request.url.path} -> 500 ({elapsed:.1f}ms)")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "request_id": request_id},
+            headers={"X-Request-ID": request_id},
+        )
+    elapsed = (time.perf_counter() - start) * 1000
+    response.headers["X-Process-Time"] = f"{elapsed:.1f}ms"
+    response.headers["X-Request-ID"] = request_id
+    log = logger.warning if response.status_code >= 500 else logger.info
+    log(f"[{request_id}] {request.method} {request.url.path} -> {response.status_code} ({elapsed:.1f}ms)")
     return response
+
+
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", "-")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    rid = _request_id(request)
+    logger.warning(f"[{rid}] Validation error on {request.method} {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "request_id": rid},
+        headers={"X-Request-ID": rid},
+    )
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    rid = _request_id(request)
+    logger.warning(f"[{rid}] DB integrity error on {request.method} {request.url.path}: {exc.orig}")
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "This record conflicts with an existing one.", "request_id": rid},
+        headers={"X-Request-ID": rid},
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
+    rid = _request_id(request)
+    logger.error(f"[{rid}] Database error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "A database error occurred. Please try again.", "request_id": rid},
+        headers={"X-Request-ID": rid},
+    )
 
 # Public + self-service (auth handles its own access control internally)
 app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
