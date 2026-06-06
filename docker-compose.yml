@@ -36,6 +36,14 @@ services:
              python scripts/seed_prod.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+  # Dev email + SMS catcher: captures all notifications (SMS arrive as emails).
+  # Web UI at http://localhost:8025, SMTP on 1025.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   db:
     image: postgres:15-alpine
     environment:

@@ -21,6 +21,19 @@ class Settings(BaseSettings):
     pii_encryption_key: str = Field(
         default="dev-only-insecure-pii-key-change-me", env="PII_ENCRYPTION_KEY")
 
+    # Resident notifications (email + SMS).
+    # NOTIFICATIONS_TRANSPORT: "brevo" (prod, via Brevo API) or "smtp" (dev, via a
+    # local Mailpit catcher). Set NOTIFICATIONS_ENABLED=true to turn on.
+    notifications_enabled: bool = Field(default=False, env="NOTIFICATIONS_ENABLED")
+    notifications_transport: str = Field(default="brevo", env="NOTIFICATIONS_TRANSPORT")
+    smtp_host: str = Field(default="mailpit", env="SMTP_HOST")
+    smtp_port: int = Field(default=1025, env="SMTP_PORT")
+    brevo_api_key: str = Field(default="", env="BREVO_API_KEY")
+    brevo_sender_email: str = Field(
+        default="no-reply@twickenhamglades.com", env="BREVO_SENDER_EMAIL")
+    brevo_sender_name: str = Field(default="Twickenham Glades", env="BREVO_SENDER_NAME")
+    brevo_sms_sender: str = Field(default="TwickGlades", env="BREVO_SMS_SENDER")
+
     # Bootstrap accounts created by scripts/seed_prod.py on deploy. Override the
     # passwords (and ideally emails/phones) with strong values in production.
     admin_email: str = Field(default="admin@twickenham.com", env="ADMIN_EMAIL")

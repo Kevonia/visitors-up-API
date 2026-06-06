@@ -4,7 +4,7 @@ logging arrivals/departures, and the audited gate log."""
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import or_, desc
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from .. import models, schemas
 from ..enums import RoleEnum, VisitType, VisitorStatus
 from ..utilities.db_util import get_db
 from ..config.auth import require_roles
+from ..notifications.service import notify_guest_movement
 from ..logging_config import logger
 
 router = APIRouter()
@@ -69,6 +70,7 @@ def search_visitors(
 @router.post("/entries", response_model=schemas.GateEntry)
 def log_entry(
     payload: schemas.GateEntryCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(gate_user),
 ):
@@ -100,12 +102,22 @@ def log_entry(
     db.commit()
     db.refresh(entry)
     logger.info(f"Gate entry logged for visitor {visitor.name} (lot {lot_no}) by {user.email}")
+
+    # Notify the resident their guest checked in (best-effort, in background).
+    resident = visitor.created_by_user
+    if resident and resident.user:
+        background_tasks.add_task(
+            notify_guest_movement,
+            resident.user.email, resident.user.phone_number,
+            visitor.name, lot_no, "checked in",
+        )
     return entry.to_dict()
 
 
 @router.put("/entries/{entry_id}/exit", response_model=schemas.GateEntry)
 def log_exit(
     entry_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(gate_user),
 ):
@@ -118,6 +130,16 @@ def log_exit(
     entry.exit_time = int(time.time())
     db.commit()
     db.refresh(entry)
+
+    # Notify the resident their guest checked out (best-effort, in background).
+    resident = entry.resident
+    visitor_name = entry.visitor.name if entry.visitor else "Your visitor"
+    if resident and resident.user:
+        background_tasks.add_task(
+            notify_guest_movement,
+            resident.user.email, resident.user.phone_number,
+            visitor_name, entry.lot_no, "checked out",
+        )
     return entry.to_dict()
 
 

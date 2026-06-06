@@ -1,10 +1,11 @@
 # app/routers/announcements.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..utilities.db_util import get_db
 from ..config.auth import get_current_user, require_roles
 from ..enums import RoleEnum
+from ..notifications.service import notify_announcement
 from ..logging_config import logger
 
 router = APIRouter()
@@ -44,12 +45,18 @@ def read_announcement(
 )
 def create_announcement(
     announcement: schemas.AnnouncementCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: schemas.UserBase = Depends(get_current_user),
 ):
     user = crud.get_user_by_email(db, email=current_user.email)
     created_by = str(user.id) if user else None
-    return crud.create_announcement(db, announcement=announcement, created_by=created_by)
+    created = crud.create_announcement(db, announcement=announcement, created_by=created_by)
+    # Email + SMS all residents about the new announcement (best-effort).
+    background_tasks.add_task(
+        notify_announcement, created.get("title", ""), created.get("body", "")
+    )
+    return created
 
 
 @router.put(
