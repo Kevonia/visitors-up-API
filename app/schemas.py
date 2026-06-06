@@ -176,6 +176,8 @@ class GateVisitorSearchResult(BaseModel):
     vehicle_plate: Optional[str] = None
     lot_no: Optional[str] = None
     resident_id: Optional[str] = None
+    on_site: bool = False
+    open_entry_id: Optional[str] = None
 
 
 # Guard account schemas
@@ -352,3 +354,31 @@ class TokenData(BaseModel):
 class TokenRefresh(BaseModel):
     refresh_token: str
     token_type: str = "Bearer"
+
+
+# Announcement schemas
+class AnnouncementBase(BaseModel):
+    title: str
+    body: str
+    category: str = "info"  # info | event | maintenance | urgent
+    published_at: Optional[int] = None
+    expires_at: Optional[int] = None
+
+
+class AnnouncementCreate(AnnouncementBase):
+    pass
+
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    category: Optional[str] = None
+    published_at: Optional[int] = None
+    expires_at: Optional[int] = None
+
+
+class Announcement(AnnouncementBase):
+    id: str
+    created_by: Optional[str] = None
+    created_at: int
+    updated_at: int

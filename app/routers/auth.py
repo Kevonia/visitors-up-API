@@ -1,5 +1,6 @@
 import logging
-from app.config.auth import verify_refresh_token
+from app.config.auth import verify_refresh_token, get_current_user
+from app.demo_data import demo_contact, demo_invoices, demo_address
 from app import models
 from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, Request
@@ -322,6 +323,26 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         db.add(db_user)
         db.flush()  # Ensure we get the ID for resident creation
 
+        # Dev/local: skip Zoho verification so test accounts can register
+        # without live Zoho data. Creates a resident with placeholder details.
+        if settings.dev_skip_zoho:
+            logger.warning(
+                f"DEV_SKIP_ZOHO enabled: skipping Zoho verification for signup {user.email}")
+            # Use the demo address' lot (e.g. "E-120"), kept unique by appending
+            # a short suffix from the user id since lot_no is a unique column.
+            demo_lot = demo_address(user.email).get("attention", "DEV")
+            db_resident = models.Resident(
+                lot_no=f"{demo_lot}-{str(db_user.id)[:8]}",
+                status="ACTIVE",
+                delinquency_status="INACTIVE",
+                user_id=db_user.id,
+            )
+            db.add(db_resident)
+            db.commit()
+            logger.info(
+                f"Successfully created user {db_user.id} (DEV_SKIP_ZOHO, no Zoho)")
+            return db_user.to_dict()
+
         logger.info("Fetching contact data from Zoho...")
         try:
             
@@ -448,6 +469,12 @@ def read_users_me(
             logger.warning(f"User not found for email: {email}")
             raise credentials_exception
 
+        # Dev/local: return rich demo data instead of calling Zoho.
+        if settings.dev_skip_zoho:
+            logger.warning(
+                f"DEV_SKIP_ZOHO enabled: returning demo contact for {email}")
+            return demo_contact(user)
+
         logger.debug(f"Fetching Zoho data for user: {email}")
         
         # Get Zoho contact information with error handling.
@@ -502,6 +529,75 @@ def read_users_me(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while processing your request"
         )
+
+
+@router.get("/users/me/invoices", response_model=list[schemas.Invoice])
+def read_users_me_invoices(
+    current_user: schemas.UserBase = Depends(get_current_user),
+):
+    """Current resident's own invoices.
+
+    Self-service: filters by the authenticated user's email (same logic as the
+    admin `/users/{user_id}/invoices` route), so any USER-role resident can fetch
+    their full invoice list without an admin/manager guard.
+    """
+    if settings.dev_skip_zoho:
+        logger.warning(
+            f"DEV_SKIP_ZOHO enabled: returning demo invoices for {current_user.email}")
+        return demo_invoices(current_user.email)
+    zoho_invoices = zoho_client.get_invoices_by_email(current_user.email)
+    contact_invoices = find_invoices_by_email(current_user.email, zoho_invoices)
+    return contact_invoices
+
+
+def _dev_placeholder_contact(user) -> dict:
+    """A minimal schemas.Contact-shaped payload for DEV_SKIP_ZOHO mode.
+
+    Lets /users/me return successfully without any live Zoho data, using the
+    DB user record and safe defaults for every required Contact field.
+    """
+    now = datetime.utcnow()
+    iso = now.isoformat()
+    return {
+        "contact_id": f"dev-{user.id}",
+        "contact_name": user.email,
+        "customer_name": user.email,
+        "vendor_name": "",
+        "company_name": "Twickenham Glades",
+        "contact_type": "customer",
+        "contact_type_formatted": "Customer",
+        "status": "active",
+        "customer_sub_type": "individual",
+        "source": "dev",
+        "is_linked_with_zohocrm": False,
+        "payment_terms": 0,
+        "payment_terms_label": "",
+        "currency_id": "",
+        "currency_code": "USD",
+        "outstanding_receivable_amount": 0.0,
+        "outstanding_receivable_amount_bcy": 0.0,
+        "unused_credits_receivable_amount": 0.0,
+        "unused_credits_receivable_amount_bcy": 0.0,
+        "first_name": "",
+        "last_name": "",
+        "email": user.email,
+        "phone": user.phone_number or "",
+        "mobile": user.phone_number or "",
+        "portal_status": "disabled",
+        "portal_status_formatted": "Disabled",
+        "created_time": now,
+        "created_time_formatted": iso,
+        "last_modified_time": now,
+        "last_modified_time_formatted": iso,
+        "ach_supported": False,
+        "has_attachment": False,
+        "address": {},
+        "invoices": [],
+        "user_id": user.id,
+        "delinquency_status": (
+            user.resident.delinquency_status if user.resident else "INACTIVE"
+        ),
+    }
 
 
 def get_zoho_supplementary_data(contact_id: str, email: str) -> tuple:

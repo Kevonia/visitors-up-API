@@ -5,6 +5,7 @@ from .database import Base
 import time
 import uuid
 from .enums import StatusEnum, DelinquencyEnum, VisitType, VisitorStatus
+from .security.pii import EncryptedStr
 
 # Association table for many-to-many relationship between Role and Permission
 role_permission_association = Table(
@@ -17,8 +18,8 @@ role_permission_association = Table(
 class User(Base):
     __tablename__ = "users"
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    email = Column(String, unique=True, index=True)
-    phone_number = Column(String, unique=True, index=True)
+    email = Column(EncryptedStr, unique=True, index=True)
+    phone_number = Column(EncryptedStr, unique=True, index=True)
     role_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("roles.id"))
     role = relationship("Role", back_populates="users", lazy="joined")
     hashed_password = Column(String)
@@ -50,7 +51,7 @@ class User(Base):
 class Resident(Base):
     __tablename__ = "residents"
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    lot_no = Column(String, unique=True, index=True)
+    lot_no = Column(EncryptedStr, unique=True, index=True)
     status = Column(Enum(StatusEnum), default=StatusEnum.ACTIVE)
     delinquency_status = Column(Enum(DelinquencyEnum), default=DelinquencyEnum.INACTIVE)
     user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), unique=True)
@@ -76,8 +77,8 @@ class Resident(Base):
 class AllowList(Base):
     __tablename__ = "allowList"
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    email = Column(String, unique=True, index=True)
-    phone_number = Column(String, unique=True, index=True)
+    email = Column(EncryptedStr, unique=True, index=True)
+    phone_number = Column(EncryptedStr, unique=True, index=True)
     created_at = Column(Integer, nullable=False, default=time.time)
     updated_at = Column(Integer, nullable=False, default=time.time)
 
@@ -86,6 +87,33 @@ class AllowList(Base):
             "id": str(self.id),
             "email": self.email,
             "phone_number": self.phone_number,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    title = Column(String, nullable=False, index=True)
+    body = Column(String, nullable=False)
+    # Free-text category used for UI badges: info | event | maintenance | urgent
+    category = Column(String, nullable=False, default="info")
+    published_at = Column(Integer, nullable=True, index=True)  # NULL = draft
+    expires_at = Column(Integer, nullable=True)  # NULL = never expires
+    created_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(Integer, nullable=False, default=time.time)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "title": self.title,
+            "body": self.body,
+            "category": self.category,
+            "published_at": self.published_at,
+            "expires_at": self.expires_at,
+            "created_by": str(self.created_by) if self.created_by else None,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -136,7 +164,7 @@ class Permission(Base):
 class Visitor(Base):
     __tablename__ = "visitors"
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(String, nullable=False)
+    name = Column(EncryptedStr, nullable=False)
     relationship_type = Column(String, nullable=False)
     # Lifecycle: one-time passes are consumed on first gate entry; permanent
     # visitors are reusable. valid_from / valid_until (epoch seconds, nullable)
@@ -145,8 +173,8 @@ class Visitor(Base):
     status = Column(Enum(VisitorStatus), nullable=False, default=VisitorStatus.ACTIVE)
     valid_from = Column(Integer, nullable=True)
     valid_until = Column(Integer, nullable=True)
-    phone = Column(String, nullable=True)
-    vehicle_plate = Column(String, nullable=True)
+    phone = Column(EncryptedStr, nullable=True)
+    vehicle_plate = Column(EncryptedStr, nullable=True)
     date_created = Column(Integer, default=time.time)
     created_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"))
     created_by_user = relationship("Resident", back_populates="visitors", lazy="joined")
@@ -195,7 +223,7 @@ class GateEntry(Base):
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     visitor_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("visitors.id"), index=True)
     resident_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"), index=True)
-    lot_no = Column(String, nullable=True)  # snapshot at time of entry
+    lot_no = Column(EncryptedStr, nullable=True)  # snapshot at time of entry
     logged_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"))  # the guard
     entry_time = Column(Integer, nullable=False, default=time.time, index=True)
     exit_time = Column(Integer, nullable=True)

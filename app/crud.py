@@ -382,3 +382,82 @@ def delete_visitor(db: Session, visitor_id: str):
     else:
         logger.warning(f"Visitor with ID {visitor_id} not found")
     return db_visitor.to_dict()
+
+# CRUD operations for Announcement
+def get_announcements(db: Session, skip: int = 0, limit: int = 100, include_unpublished: bool = False):
+    """Published, non-expired announcements, newest first.
+
+    Set include_unpublished=True for admin listings (drafts + expired included).
+    """
+    now = int(time.time())
+    query = db.query(models.Announcement)
+    if not include_unpublished:
+        query = query.filter(
+            models.Announcement.published_at.isnot(None),
+            models.Announcement.published_at <= now,
+            (models.Announcement.expires_at.is_(None)) | (models.Announcement.expires_at > now),
+        )
+    items = (
+        query.order_by(models.Announcement.published_at.desc().nullslast(),
+                       models.Announcement.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return [a.to_dict() for a in items]
+
+
+def get_announcement(db: Session, announcement_id: str):
+    db_a = db.query(models.Announcement).filter(models.Announcement.id == announcement_id).first()
+    if db_a is None:
+        return None
+    return db_a.to_dict()
+
+
+def create_announcement(db: Session, announcement: schemas.AnnouncementCreate, created_by: str = None):
+    db_a = models.Announcement(
+        title=announcement.title,
+        body=announcement.body,
+        category=announcement.category,
+        published_at=announcement.published_at,
+        expires_at=announcement.expires_at,
+        created_by=created_by,
+    )
+    db.add(db_a)
+    db.commit()
+    db.refresh(db_a)
+    logger.info(f"Announcement created: {db_a.id}")
+    return db_a.to_dict()
+
+
+def update_announcement(db: Session, announcement_id: str, announcement: schemas.AnnouncementUpdate):
+    db_a = db.query(models.Announcement).filter(models.Announcement.id == announcement_id).first()
+    if db_a:
+        if announcement.title is not None:
+            db_a.title = announcement.title
+        if announcement.body is not None:
+            db_a.body = announcement.body
+        if announcement.category is not None:
+            db_a.category = announcement.category
+        if announcement.published_at is not None:
+            db_a.published_at = announcement.published_at
+        if announcement.expires_at is not None:
+            db_a.expires_at = announcement.expires_at
+        db_a.updated_at = int(time.time())
+        db.commit()
+        db.refresh(db_a)
+    else:
+        logger.warning(f"Announcement with ID {announcement_id} not found")
+        return None
+    return db_a.to_dict()
+
+
+def delete_announcement(db: Session, announcement_id: str):
+    db_a = db.query(models.Announcement).filter(models.Announcement.id == announcement_id).first()
+    if db_a:
+        data = db_a.to_dict()
+        db.delete(db_a)
+        db.commit()
+        return data
+    logger.warning(f"Announcement with ID {announcement_id} not found")
+    return None
