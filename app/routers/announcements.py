@@ -54,7 +54,8 @@ def create_announcement(
     created = crud.create_announcement(db, announcement=announcement, created_by=created_by)
     # Email + SMS all residents about the new announcement (best-effort).
     background_tasks.add_task(
-        notify_announcement, created.get("title", ""), created.get("body", "")
+        notify_announcement,
+        created.get("title", ""), created.get("body", ""), created.get("category", "info"),
     )
     return created
 

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     pii_encryption_key: str = Field(
         default="dev-only-insecure-pii-key-change-me", env="PII_ENCRYPTION_KEY")
 
+    # Public base URL of this API, used to build absolute links (e.g. the logo)
+    # inside notification emails. Set to the deployed API origin in production.
+    public_base_url: str = Field(default="http://localhost:8001", env="PUBLIC_BASE_URL")
+
     # Resident notifications (email + SMS).
     # NOTIFICATIONS_TRANSPORT: "brevo" (prod, via Brevo API) or "smtp" (dev, via a
     # local Mailpit catcher). Set NOTIFICATIONS_ENABLED=true to turn on.

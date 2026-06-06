@@ -16,6 +16,7 @@ from email.utils import formataddr
 from app.config.config import settings
 from app.logging_config import logger
 from app.notifications import brevo
+from app.notifications.templates import render_email, CATEGORY_COLORS
 
 
 def _enabled() -> bool:
@@ -63,7 +64,7 @@ def notify_resident(email: str, phone: str, subject: str, message: str, html: st
     send_sms(phone, message)
 
 
-def notify_announcement(title: str, body: str) -> None:
+def notify_announcement(title: str, body: str, category: str = "info") -> None:
     """Email + SMS every resident (USER role) about a new announcement."""
     if not _enabled():
         return
@@ -80,7 +81,12 @@ def notify_announcement(title: str, body: str) -> None:
             .all()
         )
         subject = f"Twickenham Glades: {title}"
-        html = f"<h3>{title}</h3><p>{body}</p>"
+        html = render_email(
+            title,
+            f"<p>{body}</p>",
+            badge=(category or "info").title(),
+            badge_color=CATEGORY_COLORS.get((category or "info").lower()),
+        )
         sms = f"Twickenham Glades — {title}: {body}"[:300]
         for u in residents:
             notify_resident(u.email, u.phone_number, subject, sms, html=html)
@@ -101,4 +107,11 @@ def notify_guest_movement(email: str, phone: str, visitor_name: str, lot_no: str
         f"Your visitor {visitor_name} {event} at the Twickenham Glades gate"
         f"{f' (Lot {lot_no})' if lot_no else ''}."
     )
-    notify_resident(email, phone, subject, message)
+    lot_line = f"<p style='color:#6B7770;'>Lot {lot_no}</p>" if lot_no else ""
+    html = render_email(
+        f"Visitor {event}",
+        f"<p><strong>{visitor_name}</strong> {event} at the gate.</p>{lot_line}",
+        badge="Gate",
+        badge_color=CATEGORY_COLORS.get("visitor"),
+    )
+    notify_resident(email, phone, subject, message, html=html)

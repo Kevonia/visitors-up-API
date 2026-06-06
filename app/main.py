@@ -5,6 +5,7 @@ import uuid
 from fastapi import FastAPI, Response, Request, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -34,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static assets (e.g. the logo used in notification emails) at /static.
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
