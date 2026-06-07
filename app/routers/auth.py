@@ -41,6 +41,41 @@ redis_pool = redis.ConnectionPool.from_url(
     decode_responses=True
 )
 
+
+def _blacklist_token(token: str, ttl_seconds: int) -> None:
+    """Revoke a token until it would have expired anyway (no-op if already past)."""
+    if ttl_seconds <= 0:
+        return
+    try:
+        conn = redis.Redis(connection_pool=redis_pool)
+        try:
+            conn.setex(f"token_blacklist:{token}", ttl_seconds, "invalidated")
+        finally:
+            conn.close()
+    except redis.RedisError as e:
+        logger.error(f"Redis error blacklisting token: {e}")
+
+
+def _token_blacklisted(token: str) -> bool:
+    """Whether a token has been revoked (logged out / rotated). Fails open."""
+    try:
+        conn = redis.Redis(connection_pool=redis_pool)
+        try:
+            return conn.exists(f"token_blacklist:{token}") == 1
+        finally:
+            conn.close()
+    except redis.RedisError as e:
+        logger.error(f"Redis error checking token blacklist: {e}")
+        return False
+
+
+def _remaining_ttl(payload: dict, default_seconds: int) -> int:
+    """Seconds until a decoded token's exp, clamped to >= 0."""
+    exp = payload.get("exp")
+    if not exp:
+        return default_seconds
+    return max(0, int(exp) - int(time.time()))
+
 @router.post("/login", response_model=schemas.Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -685,36 +720,46 @@ async def refresh_token(token_data: schemas.TokenRefresh, db: Session = Depends(
     # Never log the token itself — it is a credential.
     logger.info("Access token refresh requested")
 
-    payload = verify_refresh_token(token_data.refresh_token)
+    invalid = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    presented = token_data.refresh_token
+    # Reuse detection: a refresh token is single-use. If it was already rotated
+    # or revoked (logout), reject it — a replay means it was likely stolen.
+    if _token_blacklisted(presented):
+        logger.warning("Refresh rejected: token already used or revoked")
+        raise invalid
+
+    payload = verify_refresh_token(presented)
     email = payload.get("sub")
     if not email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise invalid
 
     # Make sure the account still exists (and wasn't deleted/disabled) before
     # minting a fresh access token, and carry the current role/id forward.
     user = crud.get_user_by_email(db, email=email)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise invalid
 
-    new_access_token = create_access_token(
-        data={
-            "sub": user.email,
-            "user_id": str(user.id),
-            "role": user.role.name if user.role else None,
-        }
-    )
+    token_payload = {
+        "sub": user.email,
+        "user_id": str(user.id),
+        "role": user.role.name if user.role else None,
+    }
+    new_access_token = create_access_token(data=token_payload)
+    new_refresh_token = create_refresh_token(data=token_payload)
+
+    # Rotate: revoke the presented refresh token for its remaining lifetime so
+    # it can't be reused, and hand back a fresh one.
+    default_ttl = settings.refresh_token_expire_days * 24 * 3600
+    _blacklist_token(presented, _remaining_ttl(payload, default_ttl))
 
     return {
         "access_token": new_access_token,
-        "refresh_token": token_data.refresh_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "expires_in": settings.access_token_expire_minutes * 60
     }
@@ -752,6 +797,7 @@ def count_inactive_status(json_list,status):
 @router.post("/logout")
 async def logout(
     token: str = Depends(oauth2_scheme),
+    body: Optional[schemas.LogoutRequest] = None,
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -832,6 +878,20 @@ async def logout(
             # Continue even if Redis fails - don't block logout
         finally:
             redis_conn.close()
+
+        # Also revoke the refresh token if the client supplied it, so it can't
+        # be used to mint new access tokens after logout.
+        if body and body.refresh_token:
+            try:
+                rpayload = jwt.decode(
+                    body.refresh_token, settings.secret_key,
+                    algorithms=[settings.algorithm],
+                )
+                default_ttl = settings.refresh_token_expire_days * 24 * 3600
+                _blacklist_token(body.refresh_token, _remaining_ttl(rpayload, default_ttl))
+            except JWTError:
+                # A bad/expired refresh token needs no revocation.
+                pass
             
         logger.info(
             f"User {email} logged out successfully from {client_ip}",

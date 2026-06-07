@@ -1,8 +1,21 @@
 # app/schemas.py
-from pydantic import BaseModel
+import re
+from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID  # Import UUID
+
+
+def validate_password_strength(v: str) -> str:
+    """Minimum password policy for account creation: >= 8 chars, with at least
+    one letter and one digit. Raises ValueError (-> 422) on a weak password."""
+    if v is None:
+        return v
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+        raise ValueError("Password must contain at least one letter and one number")
+    return v
 
 
 
@@ -192,6 +205,11 @@ class GuardCreate(BaseModel):
     phone_number: str
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v):
+        return validate_password_strength(v)
+
 
 class Guard(BaseModel):
     id: str
@@ -207,6 +225,11 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v):
+        return validate_password_strength(v)
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
@@ -361,6 +384,10 @@ class TokenData(BaseModel):
 class TokenRefresh(BaseModel):
     refresh_token: str
     token_type: str = "Bearer"
+
+class LogoutRequest(BaseModel):
+    # Optional: pass the refresh token so it is revoked alongside the access token.
+    refresh_token: Optional[str] = None
 
 
 # Announcement schemas

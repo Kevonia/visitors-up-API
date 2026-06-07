@@ -19,7 +19,20 @@ from app.config.config import settings
 from app.enums import RoleEnum
 
 
-app = FastAPI(title="Twickenham Glades API")
+# Hide the interactive API docs (and the OpenAPI schema) in production.
+_IS_PROD = settings.app_env.strip().lower() == "production"
+app = FastAPI(
+    title="Twickenham Glades API",
+    docs_url=None if _IS_PROD else "/docs",
+    redoc_url=None if _IS_PROD else "/redoc",
+    openapi_url=None if _IS_PROD else "/openapi.json",
+)
+
+
+@app.get("/health", tags=["Health"], include_in_schema=False)
+def health():
+    """Lightweight liveness probe (used by Render's health check)."""
+    return {"status": "ok"}
 
 # Role groups for route-level authorization
 admin_only = require_roles(RoleEnum.ADMIN.value)

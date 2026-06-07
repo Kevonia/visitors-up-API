@@ -44,7 +44,7 @@ services:
     # Runs once before each new version goes live: apply migrations + ensure the
     # admin/security accounts exist (idempotent). Allowlist seeding is manual.
     preDeployCommand: sh -c "alembic upgrade head && python scripts/seed_prod.py"
-    healthCheckPath: /docs
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       # --- Environment / hardening ---
