@@ -12,6 +12,7 @@ from .. import models, schemas
 from ..enums import RoleEnum, VisitType, VisitorStatus
 from ..utilities.db_util import get_db
 from ..config.auth import require_roles
+from ..config.config import settings
 from ..notifications.service import notify_guest_movement
 from ..logging_config import logger
 
@@ -63,8 +64,14 @@ def search_visitors(
             "vehicle_plate": v.vehicle_plate,
             "lot_no": v.created_by_user.lot_no if v.created_by_user else None,
             "resident_id": str(v.created_by) if v.created_by else None,
+            "resident_list_category": _resident_category(v),
         })
     return results
+
+
+def _resident_category(v) -> str:
+    r = v.created_by_user
+    return r.list_category.value if r and r.list_category else None
 
 
 def _visitor_result(db: Session, v: "models.Visitor") -> dict:
@@ -90,6 +97,7 @@ def _visitor_result(db: Session, v: "models.Visitor") -> dict:
         "resident_id": str(v.created_by) if v.created_by else None,
         "on_site": open_entry is not None,
         "open_entry_id": str(open_entry.id) if open_entry else None,
+        "resident_list_category": _resident_category(v),
     }
 
 
@@ -123,6 +131,13 @@ def log_entry(
     ok, reason = visitor.is_enterable()
     if not ok:
         raise HTTPException(status_code=403, detail=reason)
+
+    # Optionally block visitors of a RED (delinquent) resident.
+    if settings.gate_block_delinquent and _resident_category(visitor) == "RED":
+        raise HTTPException(
+            status_code=403,
+            detail="Resident is on the delinquent (Red) list — entry not permitted. Please contact management.",
+        )
 
     lot_no = visitor.created_by_user.lot_no if visitor.created_by_user else None
     entry = models.GateEntry(

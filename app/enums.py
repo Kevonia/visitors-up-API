@@ -11,6 +11,16 @@ class DelinquencyEnum(str, Enum):
     INACTIVE = "INACTIVE"
 
 
+# Resident payment standing, derived from the Zoho contact:
+#   YELLOW  -> "On Payment Plan" == "Y"
+#   RED     -> not on a plan AND outstanding balance over the threshold (delinquent)
+#   WHITE   -> everyone else (good standing)
+class ListCategory(str, Enum):
+    WHITE = "WHITE"
+    YELLOW = "YELLOW"
+    RED = "RED"
+
+
 # Predefined roles. RESIDENT is an alias used in newer code; "USER" is kept
 # for backwards compatibility with existing seeded data and default signups.
 class RoleEnum(str, Enum):

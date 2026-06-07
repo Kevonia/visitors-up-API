@@ -93,6 +93,10 @@ class ZohoClient:
         token = self._get_token()
         backoff = 0.5
 
+        # Zoho Invoice requires the organization id on every call.
+        if settings.zoho_org_id:
+            params = {**(params or {}), "organization_id": settings.zoho_org_id}
+
         for attempt in range(4):
             headers = {
                 "Authorization": f"Zoho-oauthtoken {token}",

@@ -46,6 +46,9 @@ class ResidentUpdate(BaseModel):
 
 class Resident(ResidentBase):
     id: str  # Ensure this is a string
+    list_category: str = "WHITE"          # WHITE | YELLOW | RED
+    outstanding_balance: float = 0
+    on_payment_plan: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -178,6 +181,7 @@ class GateVisitorSearchResult(BaseModel):
     resident_id: Optional[str] = None
     on_site: bool = False
     open_entry_id: Optional[str] = None
+    resident_list_category: Optional[str] = None  # WHITE | YELLOW | RED
 
 
 # Guard account schemas
@@ -333,9 +337,10 @@ class Contact(BaseModel):
     ach_supported: bool
     has_attachment: bool
     address:Address
-    invoices: List[Invoice] = []
+    invoices: List[Dict] = []  # full Zoho or cached-subset invoice dicts
     user_id: UUID = None
     delinquency_status: str  # Could use Literal["active", "inactive"]
+    list_category: str = "WHITE"  # WHITE | YELLOW | RED
 
     class Config:
         json_encoders = {

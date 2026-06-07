@@ -1,6 +1,7 @@
 import logging
 from app.config.auth import verify_refresh_token, get_current_user
 from app.demo_data import demo_contact, demo_invoices, demo_address
+from app.services.zoho_sync import apply_contact, cache_invoices, cache_is_fresh
 from app import models
 from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, Request
@@ -275,16 +276,19 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         # Start transaction
         db.begin()
 
-        # Validate phone number against allowlist
+        # Authorize against the allowlist by email OR phone (Zoho contacts are
+        # keyed by email, and most have no phone on file).
         db_allowlist = db.query(models.AllowList).filter(
-            models.AllowList.phone_number == user.phone_number).first()
+            (models.AllowList.email == user.email)
+            | (models.AllowList.phone_number == user.phone_number)
+        ).first()
 
         if not db_allowlist:
             logger.warning(
-                f"Phone number not in AllowList: {user.phone_number}")
+                f"Not in AllowList: {user.email} / {user.phone_number}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Phone number not authorized for registration.",
+                detail="This email or phone number is not authorized for registration.",
             )
 
         # Set default role if not provided
@@ -357,12 +361,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Email not found in our system. Please contact support.",
                 )
-            # Invoices for just this contact, then derive delinquency once.
-            contact_invoices = zoho_client.get_invoices_for_contact(zoho_contact['contact_id'])
-            delinquency_status = "ACTIVE" if count_inactive_status(contact_invoices, "overdue") >= 3 else "INACTIVE"
-            # Get address information
+            # Address gives the lot number; the contact drives the payment list.
             addresses = zoho_client.get_contact_address(zoho_contact['contact_id'])
-
             if not addresses:
                 logger.error(
                     f"No address found for Zoho contact: {zoho_contact['contact_id']}")
@@ -370,19 +370,20 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Address information missing for your account. Please contact support.",
                 )
+            contact_invoices = zoho_client.get_invoices_for_contact(zoho_contact['contact_id'])
 
-            # Create resident record
-            resident_data = {
-                "lot_no": addresses[0]['attention'],
-                "status": "ACTIVE",
-                "delinquency_status": delinquency_status,
-                "user_id": db_user.id,
-            }
-
+            # Create the resident, then classify + cache its Zoho data on it.
+            db_resident = models.Resident(
+                lot_no=addresses[0]['attention'],
+                status="ACTIVE",
+                user_id=db_user.id,
+            )
+            apply_contact(db_resident, zoho_contact)  # list_category, balance, delinquency, ...
             logger.info(
-                f"Creating resident record for lot: {resident_data['lot_no']}")
-            db_resident = models.Resident(**resident_data)
+                f"Creating resident (lot {db_resident.lot_no}, list {db_resident.list_category.value})")
             db.add(db_resident)
+            db.flush()
+            cache_invoices(db, db_resident, contact_invoices)
 
             # Commit transaction
             db.commit()
@@ -491,15 +492,25 @@ def read_users_me(
                     detail="Contact information not found"
                 )
 
-            contact_address, contact_invoices = get_zoho_supplementary_data(
-                zoho_contact['contact_id'],
-                user.email
-            )
+            resident = user.resident
+            addr = zoho_client.get_contact_address(zoho_contact['contact_id'])
+            contact_address = addr[0] if addr else {}
+
+            # Serve invoices from our DB cache when fresh; refresh from Zoho on miss.
+            if resident and cache_is_fresh(resident, settings.zoho_cache_ttl):
+                contact_invoices = [ci.to_dict() for ci in resident.cached_invoices]
+            else:
+                contact_invoices = zoho_client.get_invoices_for_contact(zoho_contact['contact_id'])
+                if resident:
+                    apply_contact(resident, zoho_contact)
+                    cache_invoices(db, resident, contact_invoices)
+                    db.commit()
 
             # Prepare response data
             response_data = {
                 **zoho_contact,
-                "delinquency_status": user.resident.delinquency_status, 
+                "delinquency_status": resident.delinquency_status if resident else "INACTIVE",
+                "list_category": resident.list_category.value if resident else "WHITE",
                 "address": contact_address,
                 "invoices": contact_invoices,
                 "user_id": user.id,
@@ -531,23 +542,31 @@ def read_users_me(
         )
 
 
-@router.get("/users/me/invoices", response_model=list[schemas.Invoice])
+@router.get("/users/me/invoices", response_model=list[dict])
 def read_users_me_invoices(
+    db: Session = Depends(get_db),
     current_user: schemas.UserBase = Depends(get_current_user),
 ):
-    """Current resident's own invoices.
-
-    Self-service: filters by the authenticated user's email (same logic as the
-    admin `/users/{user_id}/invoices` route), so any USER-role resident can fetch
-    their full invoice list without an admin/manager guard.
-    """
+    """Current resident's own invoices — served from the local cache when fresh,
+    otherwise refreshed from Zoho (and the cache updated)."""
     if settings.dev_skip_zoho:
         logger.warning(
             f"DEV_SKIP_ZOHO enabled: returning demo invoices for {current_user.email}")
         return demo_invoices(current_user.email)
-    zoho_invoices = zoho_client.get_invoices_by_email(current_user.email)
-    contact_invoices = find_invoices_by_email(current_user.email, zoho_invoices)
-    return contact_invoices
+
+    user = crud.get_user_by_email(db, email=current_user.email)
+    resident = user.resident if user else None
+    if resident and cache_is_fresh(resident, settings.zoho_cache_ttl):
+        return [ci.to_dict() for ci in resident.cached_invoices]
+
+    contact = zoho_client.get_contact_by_email(current_user.email)
+    invoices = zoho_client.get_invoices_for_contact(contact["contact_id"]) if contact else []
+    if resident:
+        if contact:
+            apply_contact(resident, contact)
+        cache_invoices(db, resident, invoices)
+        db.commit()
+    return invoices
 
 
 def _dev_placeholder_contact(user) -> dict:

@@ -1,10 +1,10 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Float, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from .database import Base
 import time
 import uuid
-from .enums import StatusEnum, DelinquencyEnum, VisitType, VisitorStatus
+from .enums import StatusEnum, DelinquencyEnum, VisitType, VisitorStatus, ListCategory
 from .security.pii import EncryptedStr
 
 # Association table for many-to-many relationship between Role and Permission
@@ -58,19 +58,68 @@ class Resident(Base):
       # One-to-one relationship with User
     user = relationship("User", back_populates="resident")
     visitors = relationship("Visitor", back_populates="created_by_user", lazy="joined")
+    # Cached Zoho contact fields (denormalised so list/UI reads never hit Zoho).
+    zoho_contact_id = Column(String, nullable=True, index=True)
+    list_category = Column(Enum(ListCategory), nullable=False, default=ListCategory.WHITE)
+    on_payment_plan = Column(String, nullable=True)          # "Y" / "N" / None
+    outstanding_balance = Column(Float, nullable=False, default=0)
+    customer_status = Column(String, nullable=True)          # Zoho contact status
+    street_name = Column(EncryptedStr, nullable=True)        # PII, from cf_street_name
+    zoho_synced_at = Column(Integer, nullable=True)          # epoch of last Zoho cache
+    cached_invoices = relationship(
+        "CachedInvoice", back_populates="resident",
+        cascade="all, delete-orphan", lazy="select")
     created_at = Column(Integer, nullable=False, default=time.time)
     updated_at = Column(Integer, nullable=False, default=time.time)
-    
+
     def to_dict(self):
         return {
             "id": str(self.id),
             "lot_no": self.lot_no,
             "status": self.status.value,  # Use .value to get the enum value
             "delinquency_status": self.delinquency_status.value,  # Use .value to get the enum value
+            "list_category": self.list_category.value if self.list_category else "WHITE",
+            "outstanding_balance": self.outstanding_balance or 0,
+            "on_payment_plan": self.on_payment_plan,
             "user_id": str(self.user_id),
             # "user": self.user.to_dict() if self.user else None,  # Include user details
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+        }
+
+
+class CachedInvoice(Base):
+    """A locally-cached copy of a Zoho invoice (one row per invoice)."""
+    __tablename__ = "cached_invoices"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    resident_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"), index=True)
+    invoice_id = Column(String, index=True)  # Zoho invoice id
+    invoice_number = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    total = Column(Float, nullable=False, default=0)
+    balance = Column(Float, nullable=False, default=0)
+    due_date = Column(String, nullable=True)
+    date = Column(String, nullable=True)
+    last_payment_date = Column(String, nullable=True)
+    currency_code = Column(String, nullable=True)
+    company_name = Column(String, nullable=True)
+    invoice_url = Column(String, nullable=True)
+    synced_at = Column(Integer, nullable=False, default=time.time)
+    resident = relationship("Resident", back_populates="cached_invoices")
+
+    def to_dict(self):
+        return {
+            "invoice_id": self.invoice_id,
+            "invoice_number": self.invoice_number,
+            "status": self.status,
+            "total": self.total or 0,
+            "balance": self.balance or 0,
+            "due_date": self.due_date,
+            "date": self.date,
+            "last_payment_date": self.last_payment_date,
+            "currency_code": self.currency_code,
+            "company_name": self.company_name,
+            "invoice_url": self.invoice_url,
         }
 
 

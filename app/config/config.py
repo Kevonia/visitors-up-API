@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     refresh_token: str = Field(..., env="REFRESH_TOKEN")
     access_token: str = Field(..., env="ACCESS_TOKEN")
     zoho_api_url: str = Field(..., env="ZOHO_API_URL")
+    # Zoho Invoice organization id — required on every Invoice API call.
+    zoho_org_id: str = Field(default="", env="ZOHO_ORG_ID")
+
+    # Resident payment-list / caching settings.
+    # RED list = not on a payment plan AND outstanding balance over this amount.
+    red_balance_threshold: float = Field(default=18000.0, env="RED_BALANCE_THRESHOLD")
+    # How long cached Zoho data on a resident stays fresh before a lazy refresh.
+    zoho_cache_ttl: int = Field(default=6 * 3600, env="ZOHO_CACHE_TTL")
+    # Block checking in a visitor whose resident is RED (delinquent).
+    gate_block_delinquent: bool = Field(default=True, env="GATE_BLOCK_DELINQUENT")
 
     # JWT configuration
     secret_key: str = Field(..., env="SECRET_KEY")
