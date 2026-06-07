@@ -61,7 +61,7 @@ class Resident(ResidentBase):
 # AllowList schemas
 class AllowListBase(BaseModel):
     email: str
-    phone_number: str
+    phone_number: Optional[str] = None  # contacts may have no phone
 
 class AllowListCreate(AllowListBase):
     pass
