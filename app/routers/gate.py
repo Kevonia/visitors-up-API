@@ -67,6 +67,46 @@ def search_visitors(
     return results
 
 
+def _visitor_result(db: Session, v: "models.Visitor") -> dict:
+    open_entry = (
+        db.query(models.GateEntry)
+        .filter(
+            models.GateEntry.visitor_id == v.id,
+            models.GateEntry.exit_time.is_(None),
+        )
+        .first()
+    )
+    return {
+        "id": str(v.id),
+        "name": v.name,
+        "relationship_type": v.relationship_type,
+        "visit_type": v.visit_type.value if v.visit_type else None,
+        "status": v.effective_status().value,
+        "valid_from": v.valid_from,
+        "valid_until": v.valid_until,
+        "phone": v.phone,
+        "vehicle_plate": v.vehicle_plate,
+        "lot_no": v.created_by_user.lot_no if v.created_by_user else None,
+        "resident_id": str(v.created_by) if v.created_by else None,
+        "on_site": open_entry is not None,
+        "open_entry_id": str(open_entry.id) if open_entry else None,
+    }
+
+
+@router.get("/visitors/{visitor_id}", response_model=schemas.GateVisitorSearchResult)
+def get_visitor(visitor_id: str, db: Session = Depends(get_db), _user=Depends(gate_user)):
+    """Resolve one visitor by id — used when a guard scans a visitor's QR pass."""
+    import uuid as _uuid
+    try:
+        _uuid.UUID(visitor_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail="Visitor pass not found")
+    v = db.query(models.Visitor).filter(models.Visitor.id == visitor_id).first()
+    if not v:
+        raise HTTPException(status_code=404, detail="Visitor pass not found")
+    return _visitor_result(db, v)
+
+
 @router.post("/entries", response_model=schemas.GateEntry)
 def log_entry(
     payload: schemas.GateEntryCreate,
