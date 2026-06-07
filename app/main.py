@@ -15,6 +15,7 @@ from .seed_roles import seed_roles  # Import the roles seeder function
 from .logging_config import logger
 from app.zoho_integration.routes import router as zoho_router
 from app.config.auth import require_roles
+from app.config.config import settings
 from app.enums import RoleEnum
 
 
@@ -26,7 +27,9 @@ admin_or_manager = require_roles(RoleEnum.ADMIN.value, RoleEnum.MANAGER.value)
 
 
 
-origins = ["*"]
+# Lock CORS to the configured origins (the admin app). A wildcard with
+# allow_credentials is both unsafe and rejected by browsers.
+origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,22 +63,46 @@ async def request_context(request: Request, call_next):
     elapsed = (time.perf_counter() - start) * 1000
     response.headers["X-Process-Time"] = f"{elapsed:.1f}ms"
     response.headers["X-Request-ID"] = request_id
+    _apply_security_headers(request, response)
     log = logger.warning if response.status_code >= 500 else logger.info
     log(f"[{request_id}] {request.method} {request.url.path} -> {response.status_code} ({elapsed:.1f}ms)")
     return response
+
+
+def _apply_security_headers(request: Request, response: Response) -> None:
+    """Baseline hardening headers on every response."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    # Only assert HSTS when the request actually arrived over HTTPS (Render
+    # terminates TLS at the proxy and forwards the scheme in this header).
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    if proto == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
 
 def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "-")
 
 
+def _scrub_errors(errors: list) -> list:
+    """Drop the 'input' echo from validation errors so request bodies (which may
+    contain passwords/PII) never reach the logs or the response."""
+    cleaned = []
+    for e in errors:
+        cleaned.append({k: v for k, v in e.items() if k not in ("input", "ctx")})
+    return cleaned
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     rid = _request_id(request)
-    logger.warning(f"[{rid}] Validation error on {request.method} {request.url.path}: {exc.errors()}")
+    safe = _scrub_errors(exc.errors())
+    logger.warning(f"[{rid}] Validation error on {request.method} {request.url.path}: {safe}")
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "request_id": rid},
+        content={"detail": safe, "request_id": rid},
         headers={"X-Request-ID": rid},
     )
 

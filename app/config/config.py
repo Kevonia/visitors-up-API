@@ -1,8 +1,23 @@
 # config.py
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
+
+# Known-insecure development defaults. Refused at startup when APP_ENV=production
+# so a misconfigured prod deploy fails closed instead of running wide open.
+_INSECURE_PII_KEY = "dev-only-insecure-pii-key-change-me"
+_INSECURE_ADMIN_PW = "admin123"
+_INSECURE_SECURITY_PW = "security123"
 
 class Settings(BaseSettings):
+    # Deployment environment: "development" (default) or "production". In
+    # production the validator below refuses insecure defaults.
+    app_env: str = Field(default="development", env="APP_ENV")
+
+    # Comma-separated list of browser origins allowed by CORS. Lock this to the
+    # admin app's origin in production; the dev default covers local Vite/nginx.
+    cors_allow_origins: str = Field(
+        default="http://localhost:8080,http://localhost:5173", env="CORS_ALLOW_ORIGINS")
+
     # Database configuration
     postgres_user: str = Field(..., env="POSTGRES_USER")
     postgres_password: str = Field(..., env="POSTGRES_PASSWORD")
@@ -74,6 +89,31 @@ class Settings(BaseSettings):
     FAILED_LOGIN_RETENTION_DAYS: int = 30
     MAX_USER_ATTEMPTS: int = 5
     MAX_IP_ATTEMPTS: int = 20
+
+    @model_validator(mode="after")
+    def _enforce_production_secrets(self):
+        """Fail closed: refuse to boot in production with insecure defaults."""
+        if self.app_env.strip().lower() != "production":
+            return self
+        problems = []
+        if self.pii_encryption_key == _INSECURE_PII_KEY:
+            problems.append("PII_ENCRYPTION_KEY is the insecure dev default")
+        if not self.secret_key or len(self.secret_key) < 16:
+            problems.append("SECRET_KEY is missing or too short (need >= 16 chars)")
+        if self.admin_password == _INSECURE_ADMIN_PW:
+            problems.append("ADMIN_PASSWORD is the insecure dev default")
+        if self.security_password == _INSECURE_SECURITY_PW:
+            problems.append("SECURITY_PASSWORD is the insecure dev default")
+        if self.dev_skip_zoho:
+            problems.append("DEV_SKIP_ZOHO must be false in production")
+        if problems:
+            # Raise a non-ValueError so pydantic doesn't wrap it in a
+            # ValidationError that would dump every setting (incl. secrets).
+            raise RuntimeError(
+                "Refusing to start in production with insecure config:\n  - "
+                + "\n  - ".join(problems)
+            )
+        return self
 
     class Config:
         env_file = ".env"

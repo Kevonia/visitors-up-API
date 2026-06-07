@@ -39,29 +39,14 @@ def _is_token_blacklisted(token: str) -> bool:
         logger.error(f"Redis error checking token blacklist: {str(e)}")
         return False
 
-# User model
+# Minimal user schema kept for back-compat with app.zoho_integration.routes.
 class User(BaseModel):
     username: str
     password: str
 
-# Fake user database
-fake_users_db = {
-    "admin": {
-        "username": "admin",
-        "password": pwd_context.hash("adminpassword")  # Hashed password
-    }
-}
-
 # Verify password
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
-
-# Authenticate user
-def authenticate_user(username: str, password: str):
-    user = fake_users_db.get(username)
-    if not user or not verify_password(password, user["password"]):
-        return None
-    return User(**user)  # Return a User object
 
 # Create access token
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -121,20 +106,21 @@ def create_refresh_token(data: dict):
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 def verify_refresh_token(token: str):
+    invalid = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        # if payload.get("type") != "refresh":
-        #     raise HTTPException(
-        #         status_code=status.HTTP_401_UNAUTHORIZED,
-        #         detail="Invalid token type"
-        #     )
-        return payload
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise invalid
+    # Reject access tokens replayed at the refresh endpoint: only tokens minted
+    # by create_refresh_token (type == "refresh") may mint new access tokens.
+    if payload.get("type") != "refresh":
+        logger.warning("Refresh rejected: token is not a refresh token")
+        raise invalid
+    return payload
 
 
 def require_roles(*allowed_roles: str):

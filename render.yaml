@@ -1,0 +1,139 @@
+# Render Blueprint — VMS API (backend)
+# ------------------------------------
+# Lives in the `api` repo. Deploys the FastAPI service + Postgres + Redis.
+# The admin app deploys separately from its own repo (admin/render.yaml).
+#
+# First deploy:
+#   1. Render Dashboard -> New -> Blueprint -> pick the `api` repo.
+#   2. Fill in every env var marked "sync: false" (secrets) when prompted.
+#   3. After the API is live, set CORS_ALLOW_ORIGINS to the admin app's real
+#      URL (and the admin's VITE_API_BASE_URL to this API's URL).
+#   4. One-time: open the API shell and seed the allowlist from Zoho:
+#        python scripts/seed_allowlist_from_zoho.py
+#      (kept out of preDeploy — it truncates data.)
+
+databases:
+  - name: vms-db
+    databaseName: vms
+    user: vms
+    plan: basic_256mb          # free tier expires after 30 days — use a paid plan for prod
+    region: virginia           # closest US region to Jamaica; keep all services here
+
+services:
+  # ---------------------------------------------------------------------------
+  # Redis / Key Value — token blacklist, rate limiting, response cache
+  # ---------------------------------------------------------------------------
+  - type: keyvalue             # older Render accounts: use `type: redis`
+    name: vms-redis
+    plan: free                 # 25 MB is plenty for tokens + cache
+    region: virginia
+    ipAllowList: []            # empty = internal connections only (recommended)
+
+  # ---------------------------------------------------------------------------
+  # FastAPI backend (Docker)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: vms-api
+    runtime: docker
+    region: virginia
+    plan: starter              # ~$7/mo, always-on. Bump to `standard` if it feels slow.
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Override the Dockerfile's --reload CMD; bind to Render's $PORT.
+    dockerCommand: sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    # Runs once before each new version goes live: apply migrations + ensure the
+    # admin/security accounts exist (idempotent). Allowlist seeding is manual.
+    preDeployCommand: sh -c "alembic upgrade head && python scripts/seed_prod.py"
+    healthCheckPath: /docs
+    autoDeploy: true
+    envVars:
+      # --- Environment / hardening ---
+      - key: APP_ENV
+        value: production        # makes config fail closed on insecure defaults
+      - key: CORS_ALLOW_ORIGINS
+        value: https://vms-admin.onrender.com   # set to the admin app's real URL
+
+      # --- Database (wired automatically from vms-db) ---
+      - key: DATABASE_URL
+        fromDatabase: { name: vms-db, property: connectionString }
+      - key: POSTGRES_HOST
+        fromDatabase: { name: vms-db, property: host }
+      - key: POSTGRES_PORT
+        fromDatabase: { name: vms-db, property: port }
+      - key: POSTGRES_USER
+        fromDatabase: { name: vms-db, property: user }
+      - key: POSTGRES_PASSWORD
+        fromDatabase: { name: vms-db, property: password }
+      - key: POSTGRES_DB
+        fromDatabase: { name: vms-db, property: database }
+
+      # --- Redis (wired automatically from vms-redis) ---
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: vms-redis, property: connectionString }
+
+      # --- Security keys ---
+      - key: SECRET_KEY
+        generateValue: true        # JWT signing key, generated once and kept stable
+      - key: PII_ENCRYPTION_KEY
+        generateValue: true        # IMPORTANT: never change after first deploy or
+                                    # existing encrypted PII becomes unreadable.
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+
+      # --- App behaviour ---
+      - key: DEV_SKIP_ZOHO
+        value: "false"
+      - key: PUBLIC_BASE_URL
+        value: https://vms-api.onrender.com   # update if the real URL differs
+      - key: RED_BALANCE_THRESHOLD
+        value: "18000"
+      - key: ZOHO_CACHE_TTL
+        value: "21600"
+      - key: GATE_BLOCK_DELINQUENT
+        value: "true"
+
+      # --- Zoho Invoice API (secrets: set in dashboard) ---
+      - key: ZOHO_API_URL
+        value: https://www.zohoapis.com/invoice/v3
+      - key: ZOHO_ORG_ID
+        value: "768586532"
+      - key: CLIENT_ID
+        sync: false
+      - key: CLIENT_SECRET
+        sync: false
+      - key: REFRESH_TOKEN
+        sync: false
+      - key: ACCESS_TOKEN
+        sync: false
+
+      # --- Notifications (Brevo email/SMS) ---
+      - key: NOTIFICATIONS_ENABLED
+        value: "true"
+      - key: NOTIFICATIONS_TRANSPORT
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        value: no-reply@twickenhamglades.com
+      - key: BREVO_SENDER_NAME
+        value: Twickenham Glades
+      - key: BREVO_SMS_SENDER
+        value: TwickGlades
+
+      # --- Bootstrap accounts (set strong values in dashboard) ---
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_PHONE
+        sync: false
+      - key: SECURITY_EMAIL
+        sync: false
+      - key: SECURITY_PASSWORD
+        sync: false
+      - key: SECURITY_PHONE
+        sync: false

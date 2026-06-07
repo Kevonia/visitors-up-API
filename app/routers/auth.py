@@ -681,14 +681,37 @@ def find_invoices_by_email(email: str, invoices: list) -> list:
         return []
     
 @router.post("/refresh", response_model=schemas.Token)
-async def refresh_token(token_data: schemas.TokenRefresh):
-    logger.info(f"Refreshing access token {token_data.refresh_token}")
-    
+async def refresh_token(token_data: schemas.TokenRefresh, db: Session = Depends(get_db)):
+    # Never log the token itself — it is a credential.
+    logger.info("Access token refresh requested")
+
     payload = verify_refresh_token(token_data.refresh_token)
+    email = payload.get("sub")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Make sure the account still exists (and wasn't deleted/disabled) before
+    # minting a fresh access token, and carry the current role/id forward.
+    user = crud.get_user_by_email(db, email=email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     new_access_token = create_access_token(
-        data={"sub": payload.get("sub")}
+        data={
+            "sub": user.email,
+            "user_id": str(user.id),
+            "role": user.role.name if user.role else None,
+        }
     )
-    
+
     return {
         "access_token": new_access_token,
         "refresh_token": token_data.refresh_token,
