@@ -17,19 +17,34 @@ from app.services.lists import (
 )
 
 
-def _street_name(contact: dict) -> str:
-    return (contact.get("custom_field_hash") or {}).get("cf_street_name")
+def _cf(contact: dict, key: str):
+    return (contact.get("custom_field_hash") or {}).get(key)
+
+
+def lot_from_contact(contact: dict) -> str:
+    """The real lot number lives in the cf_lot_number custom field (the address
+    'attention' line is actually the resident's name)."""
+    lot = _cf(contact, "cf_lot_number")
+    return str(lot) if lot not in (None, "") else None
+
+
+def name_from_contact(contact: dict) -> str:
+    return contact.get("contact_name") or contact.get("customer_name")
 
 
 def apply_contact(resident: models.Resident, contact: dict) -> None:
     """Set a resident's cached Zoho fields from a contact dict (no commit)."""
     category = classify_contact(contact)
     resident.list_category = category
+    resident.name = name_from_contact(contact)
+    lot = lot_from_contact(contact)
+    if lot:
+        resident.lot_no = lot
     resident.on_payment_plan = get_on_payment_plan(contact) or None
     resident.outstanding_balance = get_outstanding_balance(contact)
     resident.customer_status = contact.get("status")
     resident.zoho_contact_id = contact.get("contact_id")
-    street = _street_name(contact)
+    street = _cf(contact, "cf_street_name")
     if street:
         resident.street_name = street
     # Keep the legacy delinquency flag in sync (RED == delinquent).

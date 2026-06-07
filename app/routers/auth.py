@@ -1,7 +1,7 @@
 import logging
 from app.config.auth import verify_refresh_token, get_current_user
 from app.demo_data import demo_contact, demo_invoices, demo_address
-from app.services.zoho_sync import apply_contact, cache_invoices, cache_is_fresh
+from app.services.zoho_sync import apply_contact, cache_invoices, cache_is_fresh, lot_from_contact
 from app import models
 from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, Request
@@ -361,26 +361,29 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Email not found in our system. Please contact support.",
                 )
-            # Address gives the lot number; the contact drives the payment list.
-            addresses = zoho_client.get_contact_address(zoho_contact['contact_id'])
-            if not addresses:
-                logger.error(
-                    f"No address found for Zoho contact: {zoho_contact['contact_id']}")
+            # The lot lives in the cf_lot_number custom field; fall back to the
+            # address attention only if it's missing.
+            lot = lot_from_contact(zoho_contact)
+            if not lot:
+                addresses = zoho_client.get_contact_address(zoho_contact['contact_id'])
+                lot = addresses[0]['attention'] if addresses else None
+            if not lot:
+                logger.error(f"No lot/address for Zoho contact: {zoho_contact['contact_id']}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Address information missing for your account. Please contact support.",
+                    detail="Lot information missing for your account. Please contact support.",
                 )
             contact_invoices = zoho_client.get_invoices_for_contact(zoho_contact['contact_id'])
 
             # Create the resident, then classify + cache its Zoho data on it.
             db_resident = models.Resident(
-                lot_no=addresses[0]['attention'],
+                lot_no=lot,
                 status="ACTIVE",
                 user_id=db_user.id,
             )
-            apply_contact(db_resident, zoho_contact)  # list_category, balance, delinquency, ...
+            apply_contact(db_resident, zoho_contact)  # name, lot, list_category, balance, ...
             logger.info(
-                f"Creating resident (lot {db_resident.lot_no}, list {db_resident.list_category.value})")
+                f"Creating resident ({db_resident.name}, lot {db_resident.lot_no}, list {db_resident.list_category.value})")
             db.add(db_resident)
             db.flush()
             cache_invoices(db, db_resident, contact_invoices)

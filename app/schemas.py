@@ -30,6 +30,7 @@ class Role(RoleBase):
         }
 # Resident schemas
 class ResidentBase(BaseModel):
+    name: Optional[str] = None
     lot_no: str
     status: str  # Ensure this is a string (or use Enum if applicable)
     delinquency_status: str  # Ensure this is a string (or use Enum if applicable)
@@ -182,6 +183,7 @@ class GateVisitorSearchResult(BaseModel):
     on_site: bool = False
     open_entry_id: Optional[str] = None
     resident_list_category: Optional[str] = None  # WHITE | YELLOW | RED
+    resident_name: Optional[str] = None
 
 
 # Guard account schemas

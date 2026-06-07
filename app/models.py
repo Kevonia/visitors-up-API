@@ -51,7 +51,8 @@ class User(Base):
 class Resident(Base):
     __tablename__ = "residents"
     id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    lot_no = Column(EncryptedStr, unique=True, index=True)
+    name = Column(EncryptedStr, nullable=True)  # resident/contact name (PII)
+    lot_no = Column(EncryptedStr, index=True)   # actual lot number (not unique: co-owners share)
     status = Column(Enum(StatusEnum), default=StatusEnum.ACTIVE)
     delinquency_status = Column(Enum(DelinquencyEnum), default=DelinquencyEnum.INACTIVE)
     user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), unique=True)
@@ -75,6 +76,7 @@ class Resident(Base):
     def to_dict(self):
         return {
             "id": str(self.id),
+            "name": self.name,
             "lot_no": self.lot_no,
             "status": self.status.value,  # Use .value to get the enum value
             "delinquency_status": self.delinquency_status.value,  # Use .value to get the enum value

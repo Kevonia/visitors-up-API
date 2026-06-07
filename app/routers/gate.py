@@ -65,6 +65,7 @@ def search_visitors(
             "lot_no": v.created_by_user.lot_no if v.created_by_user else None,
             "resident_id": str(v.created_by) if v.created_by else None,
             "resident_list_category": _resident_category(v),
+            "resident_name": v.created_by_user.name if v.created_by_user else None,
         })
     return results
 
@@ -98,6 +99,7 @@ def _visitor_result(db: Session, v: "models.Visitor") -> dict:
         "on_site": open_entry is not None,
         "open_entry_id": str(open_entry.id) if open_entry else None,
         "resident_list_category": _resident_category(v),
+        "resident_name": v.created_by_user.name if v.created_by_user else None,
     }
 
 
