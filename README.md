@@ -6,13 +6,17 @@ A robust backend API built with FastAPI for managing users, residents, visitors,
 
 - **User Management**: Create, read, update, and delete user accounts
 - **Role-Based Access Control**: Manage roles and permissions
-- **Resident Management**: Handle resident information
+- **Resident Management**: Handle resident information (incl. name + lot number)
 - **Visitor Tracking**: Manage visitor records and allowlists
-- **Authentication**: Secure API endpoints
+- **Payment lists**: Residents classified White / Yellow / Red from Zoho and
+  surfaced across all apps; Red (delinquent) visitors blocked at the gate
+- **Authentication**: JWT access/refresh tokens with rotation, Redis rate
+  limiting, and a password policy
+- **PII encryption at rest**: deterministic AES-SIV on sensitive columns
+- **Security hardening**: locked CORS, security headers, prod fail-closed config
 - **Performance Monitoring**: Process time tracking middleware
-- **CORS Support**: Configured for cross-origin requests
-- **Logging**: Comprehensive logging configuration
-- **Zoho Integration**: (Commented out but available for extension)
+- **Logging**: Comprehensive logging configuration (request-tagged, PII-scrubbed)
+- **Zoho Integration**: live contact/invoice sync with DB caching
 
 ## API Endpoints
 
@@ -53,9 +57,12 @@ cd api
 docker compose up --build
 ```
 
-- API: http://localhost:8000 (Swagger at `/docs`)
+- API: http://localhost:8000 (Swagger at `/docs`; liveness at `/health`)
 - Admin: http://localhost:8080
 - Postgres: localhost:5432, Redis: localhost:6379
+
+> In production (`APP_ENV=production`) the interactive docs (`/docs`, `/redoc`,
+> `/openapi.json`) are disabled; `/health` stays available for the load balancer.
 
 Postgres/Redis credentials default to `vms`/`vms`/`vms` if not set in `api/.env`,
 and the compose file overrides `DATABASE_URL`/`REDIS_URL` to point at the `db` and
@@ -76,6 +83,45 @@ on startup (`seed_roles()` in `app/main.py`). Authorization is enforced with the
 - Any authenticated resident: `/api/v1/user/visitors/*` (ownership enforced)
 
 Logged-out tokens are rejected via the Redis blacklist (`get_current_user`).
+
+## Security
+
+- **JWT auth** — short-lived access tokens + refresh tokens. `/api/v1/refresh`
+  enforces the token `type`, verifies the account still exists, and **rotates**
+  the refresh token (the presented one is blacklisted; reuse → 401). `/logout`
+  blacklists the access token and, if supplied, the refresh token.
+- **Password policy** — account/guard creation requires ≥ 8 chars with at least
+  one letter and one number (`validate_password_strength` in `app/schemas.py`),
+  enforced on the backend and mirrored in the admin + resident apps.
+- **Rate limiting** — Redis-backed: 5 login attempts/username/hour, 20/IP/hour.
+- **CORS** — locked to `CORS_ALLOW_ORIGINS` (comma-separated); no wildcard.
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`, `Permissions-Policy`, and HSTS over HTTPS.
+- **PII at rest** — sensitive columns (name, phone, lot, street) use a
+  deterministic AES-SIV type (`app/security/pii.py`) keyed by
+  `PII_ENCRYPTION_KEY`; equality lookups still work, substring search does not.
+- **Log hygiene** — request bodies are never echoed into logs (validation-error
+  `input` is scrubbed); tokens are never logged.
+- **Fail closed in production** — with `APP_ENV=production` the app refuses to
+  start on insecure defaults (dev PII key, weak `ADMIN_PASSWORD`/
+  `SECURITY_PASSWORD`, short `SECRET_KEY`, or `DEV_SKIP_ZOHO=true`).
+
+## Payment lists (White / Yellow / Red)
+
+Residents are classified from their Zoho contact (`app/services/lists.py`):
+
+- **Yellow** — on a payment plan (`cf_on_payment_plan == "Y"`).
+- **Red** — outstanding balance over `RED_BALANCE_THRESHOLD` (default 18000);
+  treated as delinquent and (when `GATE_BLOCK_DELINQUENT=true`) their visitors
+  are blocked at `POST /api/v1/gate/entries`.
+- **White** — everyone else.
+
+The category, balance, and invoices are **cached on the resident** and in
+`cached_invoices`, refreshed lazily on `/users/me` past `ZOHO_CACHE_TTL` and in
+bulk by `POST /api/v1/admin/zoho/sync`, so request paths rarely hit Zoho. The
+resident's real lot number comes from the `cf_lot_number` custom field and the
+name from `contact_name` (the Zoho address `attention` line is the name, not the
+lot).
 
 ## Gate & Visitor Lifecycle
 
@@ -98,9 +144,41 @@ Resident `delinquency_status` is stored in the DB and refreshed in bulk by
 Zoho live. `GET /api/v1/admin/zoho/metrics` reports call/cache-hit counts and
 `POST /api/v1/admin/zoho/cache/bust` clears the cache.
 
-**Env vars:** `CLIENT_ID`, `CLIENT_SECRET`, `REFRESH_TOKEN`, `ACCESS_TOKEN`,
-`ZOHO_API_URL`, `REDIS_URL`, plus the JWT/DB vars.
-
 **Redis keys:** `zoho:access_token` (shared token), `zoho:cache:*` (cached
 contacts/addresses/invoices), `zoho:metrics:*` (counters), `token_blacklist:*`,
 `login_attempt:*`, `login_ip:*`.
+
+## Configuration (env vars)
+
+See `app/config/config.py` for defaults. Key variables (`.env` locally):
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_ENV` | `development` (default) or `production` (enables fail-closed checks + hides docs) |
+| `DATABASE_URL`, `POSTGRES_*` | Postgres connection |
+| `REDIS_URL` | Redis/Key Value connection |
+| `SECRET_KEY`, `ALGORITHM` | JWT signing |
+| `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` | Token lifetimes |
+| `PII_ENCRYPTION_KEY` | Key for AES-SIV PII encryption — **stable, never change after first use** |
+| `CORS_ALLOW_ORIGINS` | Comma-separated allowed browser origins (the admin app) |
+| `PUBLIC_BASE_URL` | Absolute base for links in emails |
+| `DEV_SKIP_ZOHO` | Local only: skip Zoho on signup/`/users/me` (must be `false` in prod) |
+| `CLIENT_ID`, `CLIENT_SECRET`, `REFRESH_TOKEN`, `ACCESS_TOKEN` | Zoho OAuth |
+| `ZOHO_API_URL`, `ZOHO_ORG_ID` | Zoho Invoice endpoint + org (sent on every call) |
+| `RED_BALANCE_THRESHOLD`, `ZOHO_CACHE_TTL`, `GATE_BLOCK_DELINQUENT` | Payment-list rules + cache TTL + gate enforcement |
+| `NOTIFICATIONS_ENABLED`, `NOTIFICATIONS_TRANSPORT`, `BREVO_*`, `SMTP_*` | Email/SMS notifications |
+| `ADMIN_*`, `SECURITY_*` | Bootstrap accounts created by `scripts/seed_prod.py` |
+
+## Deployment (Render)
+
+The repos ship Render Blueprints:
+
+- `api/render.yaml` — FastAPI (Docker) + Postgres + Key Value (Redis). Sets
+  `APP_ENV=production`, wires DB/Redis automatically, generates `SECRET_KEY` /
+  `PII_ENCRYPTION_KEY`, runs `alembic upgrade head && python scripts/seed_prod.py`
+  before each release, and health-checks `/health`.
+- `admin/render.yaml` — the Vue admin as a static site.
+
+After the first deploy, set the secrets marked `sync: false`, cross-set
+`CORS_ALLOW_ORIGINS` (api) ↔ `VITE_API_BASE_URL` (admin) to each other's URLs,
+and seed the allowlist once: `python scripts/seed_allowlist_from_zoho.py`.
