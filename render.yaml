@@ -1,13 +1,22 @@
 # Render Blueprint — VMS API (backend)
 # ------------------------------------
-# Lives in the `api` repo. Deploys the FastAPI service + Postgres + Redis.
+# Lives in the `api` repo. Deploys:
+#   - vms-api        : FastAPI web service (Docker)
+#   - vms-zoho-sync  : daily cron that refreshes every resident's payment list
+#                      (White/Yellow/Red) + delinquency from Zoho
+#   - vms-db         : managed Postgres
+#   - vms-redis      : Key Value (Redis)
 # The admin app deploys separately from its own repo (admin/render.yaml).
 #
 # First deploy:
 #   1. Render Dashboard -> New -> Blueprint -> pick the `api` repo.
-#   2. Fill in every env var marked "sync: false" (secrets) when prompted.
-#   3. After the API is live, set CORS_ALLOW_ORIGINS to the admin app's real
-#      URL (and the admin's VITE_API_BASE_URL to this API's URL).
+#   2. Set every env var marked "sync: false" in the `vms-shared` group. In
+#      particular set SECRET_KEY and PII_ENCRYPTION_KEY to long random strings —
+#      the web service and the cron share this ONE group so they use the SAME
+#      PII key (the cron encrypts PII; a mismatch would write unreadable data).
+#      NEVER change PII_ENCRYPTION_KEY after the first deploy.
+#   3. Set CORS_ALLOW_ORIGINS to the admin app's real URL (and the admin's
+#      VITE_API_BASE_URL to this API's URL).
 #   4. One-time: open the API shell and seed the allowlist from Zoho:
 #        python scripts/seed_allowlist_from_zoho.py
 #      (kept out of preDeploy — it truncates data.)
@@ -18,6 +27,84 @@ databases:
     user: vms
     plan: basic_256mb          # free tier expires after 30 days — use a paid plan for prod
     region: virginia           # closest US region to Jamaica; keep all services here
+
+# Env shared by the web service AND the cron. Kept in one group so both use the
+# same secrets — crucially the same PII_ENCRYPTION_KEY. The per-service DB/Redis
+# wiring stays on each service (fromDatabase/fromService can't live in a group).
+envVarGroups:
+  - name: vms-shared
+    envVars:
+      # --- Environment / hardening ---
+      - key: APP_ENV
+        value: production        # makes config fail closed on insecure defaults
+      - key: CORS_ALLOW_ORIGINS
+        value: https://vms-admin.onrender.com   # set to the admin app's real URL
+
+      # --- Security keys (set one strong random value each) ---
+      - key: SECRET_KEY
+        sync: false              # JWT signing key
+      - key: PII_ENCRYPTION_KEY
+        sync: false              # AES-SIV PII key — NEVER change after first deploy
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+
+      # --- App behaviour ---
+      - key: DEV_SKIP_ZOHO
+        value: "false"
+      - key: PUBLIC_BASE_URL
+        value: https://vms-api.onrender.com   # update if the real URL differs
+      - key: RED_BALANCE_THRESHOLD
+        value: "18000"
+      - key: ZOHO_CACHE_TTL
+        value: "21600"           # 6h: how long /users/me + the gate trust the cache
+      - key: GATE_BLOCK_DELINQUENT
+        value: "true"
+
+      # --- Zoho Invoice API ---
+      - key: ZOHO_API_URL
+        value: https://www.zohoapis.com/invoice/v3
+      - key: ZOHO_ORG_ID
+        value: "768586532"
+      - key: CLIENT_ID
+        sync: false
+      - key: CLIENT_SECRET
+        sync: false
+      - key: REFRESH_TOKEN
+        sync: false
+      - key: ACCESS_TOKEN
+        sync: false
+
+      # --- Notifications (Brevo email/SMS) ---
+      - key: NOTIFICATIONS_ENABLED
+        value: "true"
+      - key: NOTIFICATIONS_TRANSPORT
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        value: no-reply@twickenhamglades.com
+      - key: BREVO_SENDER_NAME
+        value: Twickenham Glades
+      - key: BREVO_SMS_SENDER
+        value: TwickGlades
+
+      # --- Bootstrap accounts (set strong values) ---
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_PHONE
+        sync: false
+      - key: SECURITY_EMAIL
+        sync: false
+      - key: SECURITY_PASSWORD
+        sync: false
+      - key: SECURITY_PHONE
+        sync: false
 
 services:
   # ---------------------------------------------------------------------------
@@ -47,13 +134,8 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      # --- Environment / hardening ---
-      - key: APP_ENV
-        value: production        # makes config fail closed on insecure defaults
-      - key: CORS_ALLOW_ORIGINS
-        value: https://vms-admin.onrender.com   # set to the admin app's real URL
-
-      # --- Database (wired automatically from vms-db) ---
+      - fromGroup: vms-shared
+      # Database (wired automatically from vms-db)
       - key: DATABASE_URL
         fromDatabase: { name: vms-db, property: connectionString }
       - key: POSTGRES_HOST
@@ -66,74 +148,37 @@ services:
         fromDatabase: { name: vms-db, property: password }
       - key: POSTGRES_DB
         fromDatabase: { name: vms-db, property: database }
-
-      # --- Redis (wired automatically from vms-redis) ---
+      # Redis (wired automatically from vms-redis)
       - key: REDIS_URL
         fromService: { type: keyvalue, name: vms-redis, property: connectionString }
 
-      # --- Security keys ---
-      - key: SECRET_KEY
-        generateValue: true        # JWT signing key, generated once and kept stable
-      - key: PII_ENCRYPTION_KEY
-        generateValue: true        # IMPORTANT: never change after first deploy or
-                                    # existing encrypted PII becomes unreadable.
-      - key: ALGORITHM
-        value: HS256
-      - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "30"
-      - key: REFRESH_TOKEN_EXPIRE_DAYS
-        value: "30"
-
-      # --- App behaviour ---
-      - key: DEV_SKIP_ZOHO
-        value: "false"
-      - key: PUBLIC_BASE_URL
-        value: https://vms-api.onrender.com   # update if the real URL differs
-      - key: RED_BALANCE_THRESHOLD
-        value: "18000"
-      - key: ZOHO_CACHE_TTL
-        value: "21600"
-      - key: GATE_BLOCK_DELINQUENT
-        value: "true"
-
-      # --- Zoho Invoice API (secrets: set in dashboard) ---
-      - key: ZOHO_API_URL
-        value: https://www.zohoapis.com/invoice/v3
-      - key: ZOHO_ORG_ID
-        value: "768586532"
-      - key: CLIENT_ID
-        sync: false
-      - key: CLIENT_SECRET
-        sync: false
-      - key: REFRESH_TOKEN
-        sync: false
-      - key: ACCESS_TOKEN
-        sync: false
-
-      # --- Notifications (Brevo email/SMS) ---
-      - key: NOTIFICATIONS_ENABLED
-        value: "true"
-      - key: NOTIFICATIONS_TRANSPORT
-        value: brevo
-      - key: BREVO_API_KEY
-        sync: false
-      - key: BREVO_SENDER_EMAIL
-        value: no-reply@twickenhamglades.com
-      - key: BREVO_SENDER_NAME
-        value: Twickenham Glades
-      - key: BREVO_SMS_SENDER
-        value: TwickGlades
-
-      # --- Bootstrap accounts (set strong values in dashboard) ---
-      - key: ADMIN_EMAIL
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
-      - key: ADMIN_PHONE
-        sync: false
-      - key: SECURITY_EMAIL
-        sync: false
-      - key: SECURITY_PASSWORD
-        sync: false
-      - key: SECURITY_PHONE
-        sync: false
+  # ---------------------------------------------------------------------------
+  # Daily payment-list / delinquency refresh (Zoho -> DB cache)
+  # The list a resident is on can change daily, so this keeps every resident
+  # fresh regardless of whether they open the app. The gate also lazily refreshes
+  # a single resident at check-in if their cache is stale.
+  # ---------------------------------------------------------------------------
+  - type: cron
+    name: vms-zoho-sync
+    runtime: docker
+    region: virginia
+    schedule: "0 6 * * *"      # daily 06:00 UTC (~1am Jamaica)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh -c "python scripts/sync_zoho.py"
+    envVars:
+      - fromGroup: vms-shared
+      - key: DATABASE_URL
+        fromDatabase: { name: vms-db, property: connectionString }
+      - key: POSTGRES_HOST
+        fromDatabase: { name: vms-db, property: host }
+      - key: POSTGRES_PORT
+        fromDatabase: { name: vms-db, property: port }
+      - key: POSTGRES_USER
+        fromDatabase: { name: vms-db, property: user }
+      - key: POSTGRES_PASSWORD
+        fromDatabase: { name: vms-db, property: password }
+      - key: POSTGRES_DB
+        fromDatabase: { name: vms-db, property: database }
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: vms-redis, property: connectionString }

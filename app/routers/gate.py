@@ -14,9 +14,26 @@ from ..utilities.db_util import get_db
 from ..config.auth import require_roles
 from ..config.config import settings
 from ..notifications.service import notify_guest_movement
+from ..services.zoho_sync import sync_resident, cache_is_fresh
+from ..zoho_integration.zoho_client import ZohoClient
 from ..logging_config import logger
 
 router = APIRouter()
+zoho_client = ZohoClient()
+
+
+def _ensure_resident_fresh(db: Session, resident) -> None:
+    """Best-effort: refresh a resident's payment list/delinquency from Zoho if
+    the cache is stale, so the gate's block decision reflects today's status.
+    Never blocks the gate on a Zoho hiccup — falls back to the cached value."""
+    if not resident or cache_is_fresh(resident, settings.zoho_cache_ttl):
+        return
+    try:
+        if sync_resident(db, resident, zoho_client, with_invoices=False):
+            db.commit()
+    except Exception as e:  # Zoho down/slow — keep using the cached category
+        db.rollback()
+        logger.warning(f"Gate: could not refresh resident {resident.id} from Zoho: {e}")
 
 # Guards, managers and admins may operate the gate.
 gate_user = require_roles(RoleEnum.SECURITY.value, RoleEnum.ADMIN.value, RoleEnum.MANAGER.value)
@@ -133,6 +150,11 @@ def log_entry(
     ok, reason = visitor.is_enterable()
     if not ok:
         raise HTTPException(status_code=403, detail=reason)
+
+    # The payment list can change daily, so make sure the resident's status is
+    # current before deciding whether to block (best-effort; cached on failure).
+    if settings.gate_block_delinquent:
+        _ensure_resident_fresh(db, visitor.created_by_user)
 
     # Optionally block visitors of a RED (delinquent) resident.
     if settings.gate_block_delinquent and _resident_category(visitor) == "RED":
