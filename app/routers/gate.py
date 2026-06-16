@@ -4,22 +4,30 @@ logging arrivals/departures, and the audited gate log."""
 import time
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
 from sqlalchemy import or_, desc
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import crud, models, schemas
+from ..database import SessionLocal
 from ..enums import RoleEnum, VisitType, VisitorStatus
 from ..utilities.db_util import get_db
-from ..config.auth import require_roles
+from ..config.auth import require_roles, oauth2_scheme, _is_token_blacklisted
 from ..config.config import settings
 from ..notifications.service import notify_guest_movement
+from ..realtime import event_stream
 from ..services.zoho_sync import sync_resident, cache_is_fresh
 from ..zoho_integration.zoho_client import ZohoClient
 from ..logging_config import logger
 
 router = APIRouter()
 zoho_client = ZohoClient()
+
+# Roles permitted to operate the gate, used by both the REST routes and the SSE
+# stream's connection-time authorisation.
+_GATE_ROLES = {RoleEnum.SECURITY.value, RoleEnum.ADMIN.value, RoleEnum.MANAGER.value}
 
 
 def _ensure_resident_fresh(db: Session, resident) -> None:
@@ -251,3 +259,60 @@ def list_entries(
         .all()
     )
     return [e.to_dict() for e in entries]
+
+
+def _authorize_gate_token(token: str) -> None:
+    """Validate a bearer token for SSE access at connection time.
+
+    The streaming endpoint can't use the usual ``Depends(get_db)`` dependency:
+    that session would stay checked out for the entire (long-lived) stream and
+    exhaust the connection pool. So we authenticate against a short-lived
+    session that is closed immediately, then stream with no DB session held.
+    """
+    cred_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if _is_token_blacklisted(token):
+        raise cred_exc
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise cred_exc
+    email = payload.get("sub")
+    if not email:
+        raise cred_exc
+
+    db = SessionLocal()
+    try:
+        user = crud.get_user_by_email(db, email=email)
+        if user is None:
+            raise cred_exc
+        role_name = (user.role.name if user.role else "") or ""
+    finally:
+        db.close()
+
+    if role_name.upper() not in _GATE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this resource.",
+        )
+
+
+@router.get("/events", include_in_schema=False)
+async def gate_events(request: Request, token: str = Depends(oauth2_scheme)):
+    """Server-Sent Events stream of live gate updates (e.g. a resident
+    registering a visitor). Guards, managers and admins only. The connection is
+    authorised once, up front; events then flow until the client disconnects."""
+    _authorize_gate_token(token)
+    return StreamingResponse(
+        event_stream(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Tell any reverse proxy (nginx/Render) not to buffer the stream.
+            "X-Accel-Buffering": "no",
+        },
+    )

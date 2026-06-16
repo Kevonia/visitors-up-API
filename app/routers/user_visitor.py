@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..utilities.db_util import get_db
 from ..config.auth import get_current_user
+from ..realtime import publish_event
 from aiocache import cached
 from ..logging_config import logger
 router = APIRouter()
@@ -65,12 +66,19 @@ def create_visitor(
     # Force ownership to the authenticated resident regardless of payload.
     visitor.created_by = str(user.resident.id)
     try:
-        return crud.create_visitor(db=db, visitor=visitor)
+        created = crud.create_visitor(db=db, visitor=visitor)
     except Exception as e:
         raise HTTPException(
             status_code=400,
             detail=f"Error creating visitor: {str(e)}"
         )
+
+    # Notify any connected guard apps so the new registration shows up live in
+    # the gate app. Best-effort: a Redis hiccup must not fail the creation.
+    # Only the id is broadcast — the guard app re-fetches details over its
+    # authenticated connection, so no visitor/resident PII transits pub/sub.
+    publish_event("visitor.created", {"id": created.get("id")})
+    return created
 
 
 def _owned_visitor_or_404(db: Session, visitor_id: str, current_user):
