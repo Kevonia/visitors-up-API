@@ -26,6 +26,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Secrets (EC2_HOST/USER/SSH_KEY, ADMIN_REPO_TOKEN) live in this GitHub
+    # Environment; the job must declare it to read them.
+    environment: development
 
     env:
       SSH_PORT: ${{ secrets.EC2_SSH_PORT || '22' }}
