@@ -6,7 +6,36 @@ from .. import schemas, crud
 import pandas as pd
 from ..utilities.db_util import get_db
 from ..config.auth import get_current_user
+from ..zoho_integration.zoho_client import ZohoClient
+from ..logging_config import logger
 router = APIRouter()
+
+zoho_client = ZohoClient()
+
+
+def _fetch_zoho_contacts() -> list:
+    """Pull every Zoho contact (paged, 200 at a time)."""
+    contacts, page = [], 1
+    while True:
+        data = zoho_client.make_request("contacts", params={"page": page, "per_page": 200})
+        contacts.extend(data.get("contacts", []))
+        if not data.get("page_context", {}).get("has_more_page"):
+            break
+        page += 1
+    return contacts
+
+
+# Resync the allowlist from Zoho contacts (additive — never deletes existing rows)
+@router.post("/allowlist/sync-zoho")
+def sync_allowlist_from_zoho(db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
+    try:
+        contacts = _fetch_zoho_contacts()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Zoho contact fetch failed during allowlist sync: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Zoho to fetch contacts.")
+    return crud.sync_allowlist_from_contacts(db, contacts)
 
 # Create a new allowlist entry
 @router.post("/allowlist/")

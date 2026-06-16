@@ -1,0 +1,110 @@
+name: Deploy to EC2
+
+# CI/CD pipeline for the Visitor Management System.
+#
+# The stack spans two repos that must sit side-by-side on the server:
+#   visitors-up-API   -> api/    (this repo; owns deploy.sh + docker-compose.yml)
+#   visitors-up-admin -> admin/  (built by compose from ../admin)
+#
+# Flow:
+#   1. The runner checks out BOTH repos and positions deploy.sh at the parent.
+#   2. rsync the tree to the EC2 box (server keeps its own api/.env + Docker volumes).
+#   3. Run deploy.sh on the box (installs Docker if needed, builds, brings the stack up,
+#      seeds only when the DB is empty -> existing data is preserved).
+#   4. Always prune unused Docker containers / images / build cache afterwards.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Never run two deploys against the same box at once; let an in-flight deploy finish.
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      SSH_PORT: ${{ secrets.EC2_SSH_PORT || '22' }}
+      REMOTE: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+      REMOTE_DIR: /opt/vms
+
+    steps:
+      # --- 1. assemble the full project tree on the runner ---------------------
+      - name: Checkout API repo
+        uses: actions/checkout@v4
+        with:
+          path: vms/api
+
+      - name: Checkout Admin repo
+        uses: actions/checkout@v4
+        with:
+          repository: Kevonia/visitors-up-admin
+          ref: master
+          token: ${{ secrets.ADMIN_REPO_TOKEN }}
+          path: vms/admin
+
+      - name: Position deploy.sh at the project root
+        run: |
+          cp vms/api/deploy.sh vms/deploy.sh
+          chmod +x vms/deploy.sh
+
+      # --- 2. SSH setup -------------------------------------------------------
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$SSH_PORT" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Prepare the EC2 box (deploy dir + rsync)
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$REMOTE" '
+            sudo mkdir -p '"$REMOTE_DIR"' &&
+            sudo chown -R "$USER":"$USER" '"$REMOTE_DIR"' &&
+            command -v rsync >/dev/null 2>&1 || {
+              echo "Installing rsync...";
+              sudo dnf install -y rsync 2>/dev/null ||
+              sudo yum install -y rsync 2>/dev/null ||
+              { sudo apt-get update -y && sudo apt-get install -y rsync; };
+            }
+          '
+
+      # --- 3. ship the code ----------------------------------------------------
+      # --delete keeps the server tree in sync, but we protect the server's own
+      # api/.env (real secrets, gitignored) and never touch Docker-managed volumes.
+      - name: Rsync project to EC2
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.env' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude 'node_modules' \
+            --exclude 'dist' \
+            -e "ssh -i ~/.ssh/id_deploy -p $SSH_PORT" \
+            vms/ "$REMOTE:$REMOTE_DIR/"
+
+      # --- 4. build + start the stack -----------------------------------------
+      - name: Deploy on EC2
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$REMOTE" '
+            cd '"$REMOTE_DIR"' &&
+            chmod +x deploy.sh &&
+            ./deploy.sh
+          '
+
+      # --- 5. always clean up Docker -----------------------------------------
+      # Runs even if the deploy failed. Removes stopped containers, dangling/unused
+      # images, and build cache. The running stack and named volumes (postgres_data,
+      # redis_data) are NOT in use-> never removed by prune (no --volumes flag).
+      - name: Clean up Docker on EC2
+        if: always()
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$REMOTE" '
+            (docker system prune -af 2>/dev/null || sudo docker system prune -af) || true
+          '

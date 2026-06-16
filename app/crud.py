@@ -200,6 +200,38 @@ def delete_allowlist(db: Session, allowlist_id: str):
         logger.warning(f"AllowList entry with ID {allowlist_id} not found")
     return db_allowlist.to_dict()
 
+
+def sync_allowlist_from_contacts(db: Session, contacts: list) -> dict:
+    """Add an AllowList row for every Zoho contact that isn't already on the list.
+
+    Non-destructive (unlike scripts/seed_allowlist_from_zoho.py): existing entries
+    are kept, only new emails are inserted. Contacts are keyed by email; a phone is
+    stored when present and not already taken (the phone column is unique, so a
+    duplicate is dropped to NULL rather than failing the whole sync).
+    """
+    existing = db.query(models.AllowList).all()
+    seen_emails = {(e.email or "").strip().lower() for e in existing if e.email}
+    seen_phones = {
+        (e.phone_number or "").replace("-", "").strip() for e in existing if e.phone_number
+    }
+    added = 0
+    for c in contacts:
+        email = (c.get("email") or "").strip().lower()
+        if not email or email in seen_emails:
+            continue
+        phone = (c.get("phone") or c.get("mobile") or "").replace("-", "").strip() or None
+        if phone and phone in seen_phones:
+            phone = None  # keep the unique phone index happy
+        db.add(models.AllowList(email=email, phone_number=phone))
+        seen_emails.add(email)
+        if phone:
+            seen_phones.add(phone)
+        added += 1
+    db.commit()
+    logger.info(f"Zoho allowlist sync: {added} added from {len(contacts)} contacts")
+    return {"contacts": len(contacts), "added": added, "skipped": len(contacts) - added}
+
+
 # CRUD operations for Role
 def create_role(db: Session, role: schemas.RoleCreate):
     logger.info(f"Creating role with name: {role.name}")
