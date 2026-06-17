@@ -424,7 +424,9 @@ class TenantCreate(BaseModel):
     email: str
     phone_number: str
     number_of_children: Optional[int] = 0
-    resident_id: str
+    # Optional: admin sets it explicitly; resident-facing routes infer it from
+    # the logged-in user, so the app doesn't have to send it.
+    resident_id: Optional[str] = None
 
 
 class TenantUpdate(BaseModel):

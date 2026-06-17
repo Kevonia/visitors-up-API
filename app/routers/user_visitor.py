@@ -117,3 +117,52 @@ def delete_my_visitor(
 ):
     _owned_visitor_or_404(db, visitor_id, current_user)
     return crud.delete_visitor(db, visitor_id=visitor_id)
+
+
+# ── Tenants (resident self-service) ──────────────────────────────────────────
+def _current_resident_or_404(db: Session, current_user):
+    user = crud.get_user_by_email(db, email=current_user.email)
+    if user is None or user.resident is None:
+        raise HTTPException(status_code=404, detail="Resident not found")
+    return user.resident
+
+
+# List the current resident's own tenants
+@router.get("/tenants/", response_model=list[schemas.TenantOut])
+def read_my_tenants(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: schemas.UserBase = Depends(get_current_user),
+):
+    resident = _current_resident_or_404(db, current_user)
+    return crud.get_tenants(db, skip=skip, limit=limit, resident_id=str(resident.id))
+
+
+# Add a tenant under the current resident (resident_id inferred from the login)
+@router.post("/tenants/", response_model=schemas.TenantOut)
+def create_my_tenant(
+    tenant: schemas.TenantCreate,
+    db: Session = Depends(get_db),
+    current_user: schemas.UserBase = Depends(get_current_user),
+):
+    resident = _current_resident_or_404(db, current_user)
+    # Force ownership to the authenticated resident regardless of payload.
+    tenant.resident_id = str(resident.id)
+    return crud.create_tenant(db=db, tenant=tenant)
+
+
+# Delete one of the current resident's own tenants
+@router.delete("/tenants/{tenant_id}", response_model=schemas.TenantOut)
+def delete_my_tenant(
+    tenant_id: str,
+    db: Session = Depends(get_db),
+    current_user: schemas.UserBase = Depends(get_current_user),
+):
+    resident = _current_resident_or_404(db, current_user)
+    db_tenant = crud.get_tenant(db, tenant_id=tenant_id)
+    if db_tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if str(db_tenant.get("resident_id")) != str(resident.id):
+        raise HTTPException(status_code=403, detail="This tenant does not belong to you.")
+    return crud.delete_tenant(db, tenant_id=tenant_id)
