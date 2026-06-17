@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements
+from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant
 from .seed_roles import seed_roles  # Import the roles seeder function
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
@@ -147,6 +147,8 @@ app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(user_visitor.router, prefix="/api/v1/user", tags=["User Visitor"])
 # Announcements: residents read; admin/manager mutate (guarded per-route)
 app.include_router(announcements.router, prefix="/api/v1", tags=["Announcements"])
+# Tenants: any authenticated user (resident apps add their own; admin manages all)
+app.include_router(tenant.router, prefix="/api/v1", tags=["Tenant"])
 
 # Admin / management surfaces — restricted by role
 app.include_router(user.router, prefix="/api/v1", tags=["User"], dependencies=[Depends(admin_or_manager)])

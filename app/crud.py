@@ -493,3 +493,65 @@ def delete_announcement(db: Session, announcement_id: str):
         return data
     logger.warning(f"Announcement with ID {announcement_id} not found")
     return None
+
+
+# ── Tenants ────────────────────────────────────────────────────────────────
+def create_tenant(db: Session, tenant: schemas.TenantCreate):
+    logger.info(f"Creating tenant '{tenant.name}' for resident {tenant.resident_id}")
+    db_tenant = models.Tenant(
+        name=tenant.name,
+        email=tenant.email,
+        phone_number=tenant.phone_number,
+        number_of_children=tenant.number_of_children or 0,
+        resident_id=tenant.resident_id,
+    )
+    db.add(db_tenant)
+    db.commit()
+    db.refresh(db_tenant)
+    logger.info(f"Tenant created successfully: {db_tenant.id}")
+    return db_tenant.to_dict()
+
+
+def get_tenant(db: Session, tenant_id: str):
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    return db_tenant.to_dict() if db_tenant else None
+
+
+def get_tenants(db: Session, skip: int = 0, limit: int = 100, resident_id: str = None):
+    q = db.query(models.Tenant)
+    if resident_id:
+        q = q.filter(models.Tenant.resident_id == resident_id)
+    tenants = q.offset(skip).limit(limit).all()
+    return [t.to_dict() for t in tenants]
+
+
+def update_tenant(db: Session, tenant_id: str, tenant: schemas.TenantUpdate):
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return None
+    if tenant.name is not None:
+        db_tenant.name = tenant.name
+    if tenant.email is not None:
+        db_tenant.email = tenant.email
+    if tenant.phone_number is not None:
+        db_tenant.phone_number = tenant.phone_number
+    if tenant.number_of_children is not None:
+        db_tenant.number_of_children = tenant.number_of_children
+    if tenant.resident_id is not None:
+        db_tenant.resident_id = tenant.resident_id
+    db_tenant.updated_at = time.time()
+    db.commit()
+    db.refresh(db_tenant)
+    logger.info(f"Tenant updated successfully: {db_tenant.id}")
+    return db_tenant.to_dict()
+
+
+def delete_tenant(db: Session, tenant_id: str):
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return None
+    data = db_tenant.to_dict()
+    db.delete(db_tenant)
+    db.commit()
+    logger.info(f"Tenant deleted: {tenant_id}")
+    return data
