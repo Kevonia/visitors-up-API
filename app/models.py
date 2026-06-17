@@ -56,9 +56,11 @@ class Resident(Base):
     status = Column(Enum(StatusEnum), default=StatusEnum.ACTIVE)
     delinquency_status = Column(Enum(DelinquencyEnum), default=DelinquencyEnum.INACTIVE)
     user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), unique=True)
+    number_of_children = Column(Integer, nullable=True, default=0)  # legacy field (ported from old master)
       # One-to-one relationship with User
     user = relationship("User", back_populates="resident")
     visitors = relationship("Visitor", back_populates="created_by_user", lazy="joined")
+    tenants = relationship("Tenant", back_populates="resident", lazy="joined")
     # Cached Zoho contact fields (denormalised so list/UI reads never hit Zoho).
     zoho_contact_id = Column(String, nullable=True, index=True)
     list_category = Column(Enum(ListCategory), nullable=False, default=ListCategory.WHITE)
@@ -83,6 +85,7 @@ class Resident(Base):
             "list_category": self.list_category.value if self.list_category else "WHITE",
             "outstanding_balance": self.outstanding_balance or 0,
             "on_payment_plan": self.on_payment_plan,
+            "number_of_children": self.number_of_children,
             "user_id": str(self.user_id),
             # "user": self.user.to_dict() if self.user else None,  # Include user details
             "created_at": self.created_at,
@@ -299,4 +302,36 @@ class GateEntry(Base):
             "exit_time": self.exit_time,
             "is_on_site": self.exit_time is None,
             "notes": self.notes,
+        }
+
+
+class Tenant(Base):
+    """A resident's tenant. Legacy model ported from the old master line.
+
+    Half-built upstream (model + schemas + table, no router); kept so the
+    `tenants` table and `residents.number_of_children` column survive the
+    revamp. PII columns are plain strings here to match the original schema.
+    """
+    __tablename__ = "tenants"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True)
+    phone_number = Column(String, unique=True, index=True)
+    number_of_children = Column(Integer, nullable=True, default=0)
+    resident_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"))
+    resident = relationship("Resident", back_populates="tenants", lazy="joined")
+    created_at = Column(Integer, nullable=False, default=time.time)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "email": self.email,
+            "phone_number": self.phone_number,
+            "number_of_children": self.number_of_children,
+            "resident_id": str(self.resident_id) if self.resident_id else None,
+            "resident": self.resident.to_dict() if self.resident else None,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
         }

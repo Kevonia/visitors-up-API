@@ -416,3 +416,38 @@ class Announcement(AnnouncementBase):
     created_by: Optional[str] = None
     created_at: int
     updated_at: int
+
+
+# Tenant schemas (legacy, ported from old master; no router yet) ----------------
+class TenantCreate(BaseModel):
+    name: str
+    email: str
+    phone_number: str
+    number_of_children: Optional[int] = 0
+    resident_id: str
+
+
+class TenantUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    number_of_children: Optional[int] = None
+    resident_id: Optional[str] = None
+
+
+class TenantOut(BaseModel):
+    id: str
+    name: str
+    email: str
+    phone_number: str
+    number_of_children: Optional[int] = 0
+    resident_id: Optional[str] = None
+    resident: Optional[ResidentBase] = None
+    created_at: int
+    updated_at: int
+
+    class Config:
+        orm_mode = True
+        json_encoders = {
+            UUID: lambda v: str(v),
+        }
