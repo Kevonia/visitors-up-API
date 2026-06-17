@@ -274,7 +274,14 @@ for i in $(seq 1 60); do
     ok "API is up."
     break
   fi
-  [ "$i" -eq 60 ] && die "API did not come up in time. Check: $COMPOSE -f $COMPOSE_FILE logs web"
+  if [ "$i" -eq 60 ]; then
+    warn "API did not come up in time — dumping recent container state + web logs:"
+    dc ps || true
+    echo "──────── web logs (last 120 lines) ────────"
+    dc logs --tail=120 web || true
+    echo "───────────────────────────────────────────"
+    die "API did not come up in time. See the web logs above for the failing step (alembic / seed / uvicorn)."
+  fi
   sleep 3
 done
 
