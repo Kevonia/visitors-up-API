@@ -79,7 +79,22 @@ resolve_compose() {
   else return 1; fi
 }
 # Wrapper: every compose call targets the api/ stack file.
-dc() { $SUDO $COMPOSE -f "$COMPOSE_FILE" "$@"; }
+#
+# We pass the interpolation vars (ports, public host, CORS) explicitly via `env`
+# because `sudo` strips the environment by default — without this, exported vars
+# like API_PORT/ADMIN_PORT/PUBLIC_HOST never reach `docker compose`, so it falls
+# back to the project .env / compose defaults (API on 8001, admin on 8080, the
+# admin bundle baked with PUBLIC_HOST=localhost, CORS limited to localhost).
+# Defaults keep this safe for the teardown shortcuts that run before the IP is
+# detected (PUBLIC_HOST/CORS_ALLOW_ORIGINS unset) under `set -u`.
+dc() {
+  $SUDO env \
+    ADMIN_PORT="${ADMIN_PORT:-80}" \
+    API_PORT="${API_PORT:-8000}" \
+    PUBLIC_HOST="${PUBLIC_HOST:-localhost}" \
+    CORS_ALLOW_ORIGINS="${CORS_ALLOW_ORIGINS:-http://localhost}" \
+    $COMPOSE -f "$COMPOSE_FILE" "$@"
+}
 
 # ── teardown / logs / reseed shortcuts ───────────────────────────────────────
 case "${1:-}" in
