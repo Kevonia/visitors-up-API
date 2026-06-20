@@ -373,3 +373,29 @@ class AuditLog(Base):
             "detail": self.detail,
             "created_at": self.created_at,
         }
+
+
+class DeviceToken(Base):
+    """An FCM registration token for push notifications.
+
+    One row per (user, device). Tokens are upserted when an app registers after
+    login and removed on logout; the push sender prunes any token the FCM API
+    reports as unregistered/invalid.
+    """
+    __tablename__ = "device_tokens"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    token = Column(String, unique=True, index=True, nullable=False)
+    platform = Column(String, nullable=True)  # "android" | "ios"
+    created_at = Column(Integer, nullable=False, default=time.time)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
+            "token": self.token,
+            "platform": self.platform,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }

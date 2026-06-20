@@ -1,7 +1,12 @@
 # app/routers/visitor.py
+import time
+from typing import Optional
+
 from app import models
 from app import audit
+from app import push
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..utilities.db_util import get_db
@@ -82,6 +87,17 @@ def create_visitor(
     publish_event("visitor.created", {"id": created.get("id")})
     audit.record("visitor.created", user=current_user, request=request,
                  detail=f"visitor={created.get('id')}")
+    # Push to the guard apps so a guard is alerted even with the app closed
+    # (separate channel from the SSE live-refresh above). Best-effort.
+    try:
+        push.send_to_tokens(
+            push.tokens_for_guards(db),
+            "New visitor registered",
+            f"{created.get('name') or 'A visitor'} was added to the gate list.",
+            data={"type": "visitor.created", "id": str(created.get("id") or "")},
+        )
+    except Exception as e:
+        logger.warning(f"FCM guard push (visitor.created) failed: {e}")
     return created
 
 
@@ -174,3 +190,47 @@ def delete_my_tenant(
     if str(db_tenant.get("resident_id")) != str(resident.id):
         raise HTTPException(status_code=403, detail="This tenant does not belong to you.")
     return crud.delete_tenant(db, tenant_id=tenant_id)
+
+
+# ── Device tokens (FCM push registration) ────────────────────────────────────
+class DeviceTokenIn(BaseModel):
+    token: str
+    platform: Optional[str] = None
+
+
+@router.post("/device-tokens")
+def register_device_token(
+    body: DeviceTokenIn,
+    db: Session = Depends(get_db),
+    current_user: schemas.UserBase = Depends(get_current_user),
+):
+    """Upsert the caller's FCM token so the server can push to this device."""
+    user = crud.get_user_by_email(db, email=current_user.email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    now = int(time.time())
+    existing = db.query(models.DeviceToken).filter(
+        models.DeviceToken.token == body.token).first()
+    if existing:
+        existing.user_id = user.id
+        existing.platform = body.platform
+        existing.updated_at = now
+    else:
+        db.add(models.DeviceToken(
+            user_id=user.id, token=body.token, platform=body.platform,
+            created_at=now, updated_at=now))
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/device-tokens/{token}")
+def delete_device_token(
+    token: str,
+    db: Session = Depends(get_db),
+    current_user: schemas.UserBase = Depends(get_current_user),
+):
+    """Remove a token on logout so the device stops receiving pushes."""
+    db.query(models.DeviceToken).filter(
+        models.DeviceToken.token == token).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "ok"}

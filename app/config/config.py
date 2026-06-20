@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     brevo_sender_name: str = Field(default="Twickenham Glades", env="BREVO_SENDER_NAME")
     brevo_sms_sender: str = Field(default="TwickGlades", env="BREVO_SMS_SENDER")
 
+    # Firebase Cloud Messaging: path to the service-account JSON (server secret,
+    # never committed). Relative paths resolve from the app working dir (/app).
+    firebase_credentials: str = Field(
+        default="firebase-service-account.json", env="FIREBASE_CREDENTIALS")
+
     # Bootstrap accounts created by scripts/seed_prod.py on deploy. Override the
     # passwords (and ideally emails/phones) with strong values in production.
     admin_email: str = Field(default="admin@twickenham.com", env="ADMIN_EMAIL")

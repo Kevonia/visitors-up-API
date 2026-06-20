@@ -28,6 +28,10 @@ aiocache==0.12.1
 requests==2.31.0
 httpx==0.26.0
 
+# Firebase Cloud Messaging (FCM HTTP v1) — mint OAuth2 tokens from the
+# service-account key; messages are sent with `requests` above.
+google-auth==2.28.0
+
 # Environment
 python-dotenv==1.0.0
 

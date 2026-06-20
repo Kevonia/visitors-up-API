@@ -1,6 +1,10 @@
 # .gitignore
 .env
 
+# Firebase service-account key (server secret — never commit)
+firebase-service-account.json
+*firebase-adminsdk*.json
+
 # Python
 __pycache__/
 *.py[cod]

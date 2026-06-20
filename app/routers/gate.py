@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from .. import audit
+from .. import push
 from ..database import SessionLocal
 from ..enums import RoleEnum, VisitType, VisitorStatus
 from ..utilities.db_util import get_db
@@ -202,6 +203,17 @@ def log_entry(
             resident.user.email, resident.user.phone_number,
             visitor.name, lot_no, "checked in",
         )
+        # Push only the owning resident: "your guest arrived" (best-effort).
+        try:
+            push.send_to_tokens(
+                push.tokens_for_user(db, resident.user.id),
+                "Guest arrived",
+                f"{visitor.name or 'Your guest'} checked in at the gate.",
+                data={"type": "gate.entry", "entry_id": str(entry.id),
+                      "visitor_id": str(visitor.id)},
+            )
+        except Exception as e:
+            logger.warning(f"FCM gate.entry push failed: {e}")
     return entry.to_dict()
 
 
@@ -234,6 +246,20 @@ def log_exit(
             resident.user.email, resident.user.phone_number,
             visitor_name, entry.lot_no, "checked out",
         )
+    # Push the owning resident + all guards: visitor checked out (best-effort).
+    try:
+        recipients = set(push.tokens_for_guards(db))
+        if resident and resident.user:
+            recipients.update(push.tokens_for_user(db, resident.user.id))
+        push.send_to_tokens(
+            recipients,
+            "Visitor checked out",
+            f"{visitor_name} checked out at the gate.",
+            data={"type": "gate.exit", "entry_id": str(entry.id),
+                  "visitor_id": str(entry.visitor_id)},
+        )
+    except Exception as e:
+        logger.warning(f"FCM gate.exit push failed: {e}")
     return entry.to_dict()
 
 
