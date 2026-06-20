@@ -241,6 +241,7 @@ class User(UserBase):
     id: str
     role:Optional[Role] =None
     resident:Optional[Resident] =None
+    last_login_at: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

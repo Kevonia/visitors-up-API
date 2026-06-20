@@ -11,6 +11,7 @@ from sqlalchemy import or_, desc
 from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
+from .. import audit
 from ..database import SessionLocal
 from ..enums import RoleEnum, VisitType, VisitorStatus
 from ..utilities.db_util import get_db
@@ -148,6 +149,7 @@ def log_entry(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(gate_user),
+    request: Request = None,
 ):
     """Log a visitor arriving at the gate. Validates the pass is usable and
     consumes one-time passes."""
@@ -189,6 +191,8 @@ def log_entry(
     db.commit()
     db.refresh(entry)
     logger.info(f"Gate entry logged for visitor {visitor.name} (lot {lot_no}) by {user.email}")
+    audit.record("gate.entry", user=user, request=request,
+                 detail=f"visitor={visitor.id} entry={entry.id} lot={lot_no}")
 
     # Notify the resident their guest checked in (best-effort, in background).
     resident = visitor.created_by_user
@@ -207,6 +211,7 @@ def log_exit(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(gate_user),
+    request: Request = None,
 ):
     """Stamp the exit time on an open gate entry."""
     entry = db.query(models.GateEntry).filter(models.GateEntry.id == entry_id).first()
@@ -217,6 +222,8 @@ def log_exit(
     entry.exit_time = int(time.time())
     db.commit()
     db.refresh(entry)
+    audit.record("gate.exit", user=user, request=request,
+                 detail=f"entry={entry.id} visitor={entry.visitor_id}")
 
     # Notify the resident their guest checked out (best-effort, in background).
     resident = entry.resident

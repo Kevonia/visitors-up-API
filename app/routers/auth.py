@@ -3,6 +3,7 @@ from app.config.auth import verify_refresh_token, get_current_user
 from app.demo_data import demo_contact, demo_invoices, demo_address
 from app.services.zoho_sync import apply_contact, cache_invoices, cache_is_fresh, lot_from_contact
 from app import models
+from app import audit
 from app.zoho_integration.zoho_client import ZohoClient
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -105,6 +106,8 @@ def login(
 
         # Rate limiting check
         if is_rate_limited(form_data.username, client_ip):
+            audit.record("login.failed", actor_email=form_data.username,
+                         status="failure", request=request, detail="rate_limited")
             logger.warning(
                 f"Rate limited login attempt for {form_data.username} from {client_ip}",
                 extra={"tags": {"security": "rate_limit", "severity": "high"}}
@@ -118,6 +121,8 @@ def login(
         user = crud.get_user_by_email(db, email=form_data.username)
         if not user:
             log_failed_attempt(form_data.username, client_ip, user_agent, "invalid_username")
+            audit.record("login.failed", actor_email=form_data.username,
+                         status="failure", request=request, detail="invalid_username")
             logger.warning(
                 f"User not found: {form_data.username}",
                 extra={"tags": {"security": "invalid_username", "severity": "medium"}}
@@ -143,6 +148,8 @@ def login(
         # Verify password with timing attack protection
         if not verify_password(form_data.password, user.hashed_password):
             log_failed_attempt(form_data.username, client_ip, user_agent, "invalid_password")
+            audit.record("login.failed", user=user, status="failure",
+                         request=request, detail="invalid_password")
             logger.warning(
                 f"Invalid password for user: {user.email}",
                 extra={"tags": {"security": "invalid_password", "severity": "medium"}}
@@ -187,6 +194,16 @@ def login(
 
         # Reset rate limiting on successful login
         reset_rate_limit(form_data.username, client_ip)
+
+        # Record the successful login: stamp last_login_at and append an audit
+        # row. Both are best-effort and must not fail the login itself.
+        try:
+            user.last_login_at = int(time.time())
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to update last_login_at for {user.email}: {e}")
+        audit.record("login.success", user=user, request=request)
 
         return {
             "access_token": access_token,
@@ -872,12 +889,15 @@ async def logout(
             }
             redis_conn.lpush("security:user_logouts", json.dumps(logout_entry))
             redis_conn.ltrim("security:user_logouts", 0, 9999)
-            
+
         except redis.RedisError as e:
             logger.error(f"Redis error during logout: {str(e)}")
             # Continue even if Redis fails - don't block logout
         finally:
             redis_conn.close()
+
+        # Persistent audit trail of the logout (best-effort).
+        audit.record("logout", actor_email=email, request=request)
 
         # Also revoke the refresh token if the client supplied it, so it can't
         # be used to mint new access tokens after logout.

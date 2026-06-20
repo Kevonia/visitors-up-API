@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant
+from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant, audit
 from .seed_roles import seed_roles  # Import the roles seeder function
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
@@ -163,6 +163,8 @@ app.include_router(permission.router, prefix="/api/v1", tags=["Permission"], dep
 app.include_router(gate.router, prefix="/api/v1/gate", tags=["Gate"])
 # Zoho admin: bulk delinquency sync, cache-bust and metrics
 app.include_router(zoho_admin.router, prefix="/api/v1/admin", tags=["Zoho Admin"])
+# Security audit trail (read-only) — admin/manager only
+app.include_router(audit.router, prefix="/api/v1/admin", tags=["Audit"], dependencies=[Depends(admin_or_manager)])
 # app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
 
 @app.on_event("startup")

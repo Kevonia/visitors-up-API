@@ -25,6 +25,8 @@ class User(Base):
     hashed_password = Column(String)
    # One-to-one relationship with Resident
     resident = relationship("Resident", back_populates="user", uselist=False)
+    # Epoch seconds of the most recent successful login (NULL = never logged in).
+    last_login_at = Column(Integer, nullable=True)
     created_at = Column(Integer, nullable=False, default=time.time)
     updated_at = Column(Integer, nullable=False, default=time.time)
 
@@ -34,6 +36,7 @@ class User(Base):
             "email": self.email,
             "phone_number": self.phone_number,
             "role_id": str(self.role_id),
+            "last_login_at": self.last_login_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -334,4 +337,39 @@ class Tenant(Base):
             "resident": self.resident.to_dict() if self.resident else None,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+        }
+
+
+class AuditLog(Base):
+    """Append-only security audit trail.
+
+    One row per security-relevant action (logins, logouts, visitor and gate
+    activity). Rows are written best-effort by app/audit.py and never mutated.
+
+    user_id is the acting account when known (NULL for failed logins where no
+    account matched). actor_email is the email/attempted-username, encrypted at
+    rest like other PII; it stays readable even if the user is later deleted.
+    """
+    __tablename__ = "audit_logs"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    actor_email = Column(EncryptedStr, nullable=True)   # PII, encrypted at rest
+    action = Column(String, nullable=False, index=True)  # e.g. "login.success"
+    status = Column(String, nullable=False, default="success")  # success | failure
+    ip = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    detail = Column(String, nullable=True)  # short free-text / context
+    created_at = Column(Integer, nullable=False, default=time.time, index=True)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
+            "actor_email": self.actor_email,
+            "action": self.action,
+            "status": self.status,
+            "ip": self.ip,
+            "user_agent": self.user_agent,
+            "detail": self.detail,
+            "created_at": self.created_at,
         }

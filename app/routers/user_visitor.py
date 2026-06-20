@@ -1,6 +1,7 @@
 # app/routers/visitor.py
 from app import models
-from fastapi import APIRouter, Depends, HTTPException
+from app import audit
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..utilities.db_util import get_db
@@ -31,9 +32,10 @@ def read_visitors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 
 @router.post("/visitors/", response_model=schemas.Visitor)
 def create_visitor(
-    visitor: schemas.VisitorCreate, 
-    db: Session = Depends(get_db), 
-    current_user: schemas.UserBase = Depends(get_current_user)
+    visitor: schemas.VisitorCreate,
+    db: Session = Depends(get_db),
+    current_user: schemas.UserBase = Depends(get_current_user),
+    request: Request = None,
 ) -> schemas.Visitor:
     """
     Create a new visitor associated with the current user.
@@ -78,6 +80,8 @@ def create_visitor(
     # Only the id is broadcast — the guard app re-fetches details over its
     # authenticated connection, so no visitor/resident PII transits pub/sub.
     publish_event("visitor.created", {"id": created.get("id")})
+    audit.record("visitor.created", user=current_user, request=request,
+                 detail=f"visitor={created.get('id')}")
     return created
 
 
@@ -114,9 +118,13 @@ def delete_my_visitor(
     visitor_id: str,
     db: Session = Depends(get_db),
     current_user: schemas.UserBase = Depends(get_current_user),
+    request: Request = None,
 ):
     _owned_visitor_or_404(db, visitor_id, current_user)
-    return crud.delete_visitor(db, visitor_id=visitor_id)
+    deleted = crud.delete_visitor(db, visitor_id=visitor_id)
+    audit.record("visitor.deleted", user=current_user, request=request,
+                 detail=f"visitor={visitor_id}")
+    return deleted
 
 
 # ── Tenants (resident self-service) ──────────────────────────────────────────
