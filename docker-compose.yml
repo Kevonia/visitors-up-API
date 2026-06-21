@@ -80,9 +80,9 @@ services:
       context: ../admin
       args:
         # Baked into the JS bundle; points at the API on the host the *browser*
-        # reaches. PUBLIC_HOST is localhost for dev; deploy.sh sets it to the
-        # instance's public IP for a remote demo.
-        VITE_API_BASE_URL: http://${PUBLIC_HOST:-localhost}:${API_PORT:-8000}/api
+        # reaches. deploy.sh exports VITE_API_BASE_URL (the HTTPS sslip.io origin)
+        # for remote deploys; local dev falls back to the plain-HTTP host below.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://${PUBLIC_HOST:-localhost}:${API_PORT:-8000}/api}
     ports:
       # Admin host port: 8080 for local dev; deploy.sh sets ADMIN_PORT=80.
       - "${ADMIN_PORT:-8080}:80"
