@@ -123,3 +123,15 @@ def tokens_for_guards(db) -> list[str]:
         .all()
     )
     return [r.token for r in rows]
+
+
+def tokens_for_residents(db) -> list[str]:
+    """All device tokens for resident (USER-role) accounts."""
+    rows = (
+        db.query(models.DeviceToken)
+        .join(models.User, models.DeviceToken.user_id == models.User.id)
+        .join(models.Role, models.User.role_id == models.Role.id)
+        .filter(models.Role.name == RoleEnum.USER.value)
+        .all()
+    )
+    return [r.token for r in rows]

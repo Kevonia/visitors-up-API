@@ -6,6 +6,7 @@ from ..utilities.db_util import get_db
 from ..config.auth import get_current_user, require_roles
 from ..enums import RoleEnum
 from ..notifications.service import notify_announcement
+from .. import push
 from ..logging_config import logger
 
 router = APIRouter()
@@ -57,6 +58,19 @@ def create_announcement(
         notify_announcement,
         created.get("title", ""), created.get("body", ""), created.get("category", "info"),
     )
+    # Push residents too, but only for a PUBLISHED announcement (not a draft).
+    if created.get("published_at"):
+        try:
+            body = (created.get("body") or "").strip()
+            push.send_to_tokens(
+                push.tokens_for_residents(db),
+                created.get("title") or "New announcement",
+                body[:140] if body else "Open the app to read the latest update.",
+                data={"type": "announcement.created",
+                      "id": str(created.get("id") or "")},
+            )
+        except Exception as e:
+            logger.warning(f"FCM announcement push failed: {e}")
     return created
 
 
