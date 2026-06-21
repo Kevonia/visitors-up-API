@@ -59,23 +59,37 @@ def search_visitors(
 ):
     """Manual lookup: find registered visitors across residents so a guard can
     confirm a caller before logging entry."""
-    query = db.query(models.Visitor).join(
+    base = db.query(models.Visitor).join(
         models.Resident, models.Visitor.created_by == models.Resident.id
     )
 
-    if q:
-        like = f"%{q.strip()}%"
-        query = query.filter(
-            or_(
-                models.Visitor.name.ilike(like),
-                models.Visitor.phone.ilike(like),
-                models.Visitor.vehicle_plate.ilike(like),
-            )
-        )
-    if lot_no:
-        query = query.filter(models.Resident.lot_no.ilike(f"%{lot_no.strip()}%"))
+    ql = q.strip().lower() if q and q.strip() else None
+    lotl = lot_no.strip().lower() if lot_no and lot_no.strip() else None
 
-    visitors = query.order_by(models.Visitor.name).limit(limit).all()
+    # name / phone / vehicle_plate / lot_no are encrypted at rest (AES-SIV), so a
+    # SQL ILIKE matches ciphertext and never the plaintext. Substring search must
+    # therefore happen in Python after the ORM transparently decrypts the rows.
+    if not ql and not lotl:
+        candidates = base.limit(limit).all()
+    else:
+        candidates = base.all()
+
+        def _matches(v):
+            if ql:
+                hay = ' '.join(
+                    s for s in [v.name, v.phone, v.vehicle_plate] if s
+                ).lower()
+                if ql not in hay:
+                    return False
+            if lotl:
+                lot = (v.created_by_user.lot_no if v.created_by_user else '') or ''
+                if lotl not in lot.lower():
+                    return False
+            return True
+
+        candidates = [v for v in candidates if _matches(v)]
+
+    visitors = sorted(candidates, key=lambda v: (v.name or '').lower())[:limit]
 
     results = []
     for v in visitors:
