@@ -1,0 +1,27 @@
+# Production TLS + admin-over-HTTPS overlay (auto-merged by docker compose).
+# Committed so a redeploy keeps HTTPS + the correct admin API URL instead of
+# reverting to the http://<ip>:8000 build arg (which causes mixed-content on the
+# HTTPS admin page). The Firebase key is provided via FIREBASE_CREDENTIALS_JSON
+# in .env (a server secret, never committed).
+services:
+  admin:
+    build:
+      args:
+        VITE_API_BASE_URL: https://3.134.90.19.sslip.io/api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - admin
+
+volumes:
+  caddy_data:
+  caddy_config:

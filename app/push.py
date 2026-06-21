@@ -13,7 +13,9 @@ Usage:
     push.tokens_for_user(db, user_id)
     push.tokens_for_guards(db)
 """
+import base64
 import json
+import os
 from typing import Optional
 
 import requests
@@ -34,11 +36,20 @@ _project_id = None
 
 
 def _credentials():
-    """Lazily load + cache the service-account credentials and project id."""
+    """Lazily load + cache the service-account credentials and project id.
+
+    Prefers ``FIREBASE_CREDENTIALS_JSON`` (base64 of the key) so the credential
+    lives in the persistent .env and survives a redeploy that wipes loose files;
+    falls back to the JSON file at ``settings.firebase_credentials``.
+    """
     global _creds, _project_id
     if _creds is None:
-        with open(settings.firebase_credentials) as f:
-            info = json.load(f)
+        b64 = os.environ.get("FIREBASE_CREDENTIALS_JSON")
+        if b64:
+            info = json.loads(base64.b64decode(b64))
+        else:
+            with open(settings.firebase_credentials) as f:
+                info = json.load(f)
         _project_id = info.get("project_id")
         _creds = service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
     return _creds, _project_id
