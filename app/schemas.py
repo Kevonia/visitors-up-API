@@ -248,6 +248,31 @@ class IncidentOut(BaseModel):
     created_at: int
 
 
+# Maintenance / "Report Issue" schemas
+class MaintenanceCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = "general"   # plumbing|electrical|landscaping|security|general
+    priority: Optional[str] = "normal"    # low|normal|high
+
+
+class MaintenanceStatusUpdate(BaseModel):
+    status: str   # OPEN|IN_PROGRESS|RESOLVED|CLOSED
+
+
+class MaintenanceOut(BaseModel):
+    id: str
+    resident_id: Optional[str] = None
+    lot_no: Optional[str] = None
+    category: str
+    title: str
+    description: Optional[str] = None
+    priority: str
+    status: str
+    created_at: int
+    updated_at: int
+
+
 # Guard account schemas
 class GuardCreate(BaseModel):
     email: str

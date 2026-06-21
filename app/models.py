@@ -408,6 +408,36 @@ class AuditLog(Base):
         }
 
 
+class MaintenanceRequest(Base):
+    """A resident-reported maintenance/issue request, tracked to resolution."""
+    __tablename__ = "maintenance_requests"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    resident_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"), nullable=True, index=True)
+    reporter_user_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    lot_no = Column(EncryptedStr, nullable=True)   # PII, snapshot at report time
+    category = Column(String, nullable=False, default="general")  # plumbing|electrical|landscaping|security|general
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    priority = Column(String, nullable=False, default="normal")   # low|normal|high
+    status = Column(String, nullable=False, default="OPEN", index=True)  # OPEN|IN_PROGRESS|RESOLVED|CLOSED
+    created_at = Column(Integer, nullable=False, default=time.time, index=True)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "resident_id": str(self.resident_id) if self.resident_id else None,
+            "lot_no": self.lot_no,
+            "category": self.category,
+            "title": self.title,
+            "description": self.description,
+            "priority": self.priority,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
 class Incident(Base):
     """A panic/SOS or safety incident raised from an app. Guards/admins are
     alerted live (FCM + SSE), acknowledge it, then resolve it."""
