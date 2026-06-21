@@ -130,6 +130,11 @@ class VisitorBase(BaseModel):
     valid_until: Optional[int] = None
     phone: Optional[str] = None
     vehicle_plate: Optional[str] = None
+    # Recurring schedule (e.g. a helper): days "MON,TUE,…" + a daily window in
+    # minutes-from-midnight (local time).
+    schedule_days: Optional[str] = None
+    schedule_start: Optional[int] = None
+    schedule_end: Optional[int] = None
     created_by_user: Optional[Resident] = None
 
 class VisitorCreate(VisitorBase):
@@ -145,11 +150,15 @@ class VisitorUpdate(BaseModel):
     valid_until: Optional[int] = None
     phone: Optional[str] = None
     vehicle_plate: Optional[str] = None
+    schedule_days: Optional[str] = None
+    schedule_start: Optional[int] = None
+    schedule_end: Optional[int] = None
 
 
 class Visitor(VisitorBase):
     id: str  # Ensure this is a string
     status: Optional[str] = None
+    share_token: Optional[str] = None
     date_created: datetime
 
     class Config:
@@ -197,6 +206,46 @@ class GateVisitorSearchResult(BaseModel):
     open_entry_id: Optional[str] = None
     resident_list_category: Optional[str] = None  # WHITE | YELLOW | RED
     resident_name: Optional[str] = None
+
+
+# Pre-registration: public (no-auth) view of a pass shared via link.
+class PublicPass(BaseModel):
+    id: str
+    name: str
+    relationship_type: Optional[str] = None
+    visit_type: Optional[str] = None
+    status: Optional[str] = None
+    lot_no: Optional[str] = None
+    resident_name: Optional[str] = None
+    valid_from: Optional[int] = None
+    valid_until: Optional[int] = None
+
+
+# Incident / SOS schemas
+class IncidentCreate(BaseModel):
+    kind: Optional[str] = "panic"   # panic | medical | fire | security | other
+    note: Optional[str] = None
+    lot_no: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class IncidentOut(BaseModel):
+    id: str
+    reported_by: Optional[str] = None
+    reporter_role: Optional[str] = None
+    reporter_name: Optional[str] = None
+    lot_no: Optional[str] = None
+    kind: str
+    status: str
+    note: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    acknowledged_by: Optional[str] = None
+    acknowledged_at: Optional[int] = None
+    resolved_by: Optional[str] = None
+    resolved_at: Optional[int] = None
+    created_at: int
 
 
 # Guard account schemas

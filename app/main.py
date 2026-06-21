@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant, audit
+from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant, audit, incidents, passes, analytics
 from .seed_roles import seed_roles  # Import the roles seeder function
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
@@ -165,6 +165,12 @@ app.include_router(gate.router, prefix="/api/v1/gate", tags=["Gate"])
 app.include_router(zoho_admin.router, prefix="/api/v1/admin", tags=["Zoho Admin"])
 # Security audit trail (read-only) — admin/manager only
 app.include_router(audit.router, prefix="/api/v1/admin", tags=["Audit"], dependencies=[Depends(admin_or_manager)])
+# Panic/SOS incidents: any authed user can raise; guards/admins respond (per-route).
+app.include_router(incidents.router, prefix="/api/v1", tags=["Incidents"])
+# Public pre-registration pass lookup (no auth).
+app.include_router(passes.router, prefix="/api/v1", tags=["Passes"])
+# Board analytics dashboards (admin/manager).
+app.include_router(analytics.router, prefix="/api/v1/admin", tags=["Analytics"], dependencies=[Depends(admin_or_manager)])
 # app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
 
 @app.on_event("startup")

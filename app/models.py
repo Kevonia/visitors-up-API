@@ -232,10 +232,35 @@ class Visitor(Base):
     valid_until = Column(Integer, nullable=True)
     phone = Column(EncryptedStr, nullable=True)
     vehicle_plate = Column(EncryptedStr, nullable=True)
+    # Recurring schedule (e.g. a domestic helper): days as "MON,TUE,…" plus a
+    # daily window in minutes-from-midnight (local time). When schedule_days is
+    # set, the pass only enters on those days within [schedule_start, schedule_end].
+    schedule_days = Column(String, nullable=True)
+    schedule_start = Column(Integer, nullable=True)
+    schedule_end = Column(Integer, nullable=True)
+    # Public share token for a pre-registration link (guest needs no app).
+    share_token = Column(String, nullable=True, unique=True, index=True)
     date_created = Column(Integer, default=time.time)
     created_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"))
     created_by_user = relationship("Resident", back_populates="visitors", lazy="joined")
     gate_entries = relationship("GateEntry", back_populates="visitor")
+
+    _DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+    def _within_schedule(self, now):
+        """For a scheduled (recurring) pass, whether `now` falls inside the
+        allowed day-of-week + daily time window. Jamaica is UTC-5 year-round."""
+        local = time.gmtime(now - 5 * 3600)
+        allowed = {d.strip().upper()
+                   for d in (self.schedule_days or "").split(",") if d.strip()}
+        if allowed and self._DAYS[local.tm_wday] not in allowed:
+            return False, "This pass is not valid today."
+        minutes = local.tm_hour * 60 + local.tm_min
+        if self.schedule_start is not None and minutes < self.schedule_start:
+            return False, "This pass is not valid at this time of day."
+        if self.schedule_end is not None and minutes > self.schedule_end:
+            return False, "This pass is not valid at this time of day."
+        return True, None
 
     def is_enterable(self, now=None):
         """Return (ok, reason). Evaluates the live validity of this pass."""
@@ -248,6 +273,10 @@ class Visitor(Base):
             return False, "Visitor pass has expired."
         if self.valid_from is not None and now < self.valid_from:
             return False, "Visitor pass is not yet valid."
+        if self.schedule_days:
+            ok, reason = self._within_schedule(now)
+            if not ok:
+                return False, reason
         return True, None
 
     def effective_status(self, now=None):
@@ -268,6 +297,10 @@ class Visitor(Base):
             "valid_until": self.valid_until,
             "phone": self.phone,
             "vehicle_plate": self.vehicle_plate,
+            "schedule_days": self.schedule_days,
+            "schedule_start": self.schedule_start,
+            "schedule_end": self.schedule_end,
+            "share_token": self.share_token,
             "date_created": self.date_created,
             "created_by": str(self.created_by),
             "created_by_user": self.created_by_user.to_dict() if self.created_by_user else None,  # Include user details
@@ -371,6 +404,46 @@ class AuditLog(Base):
             "ip": self.ip,
             "user_agent": self.user_agent,
             "detail": self.detail,
+            "created_at": self.created_at,
+        }
+
+
+class Incident(Base):
+    """A panic/SOS or safety incident raised from an app. Guards/admins are
+    alerted live (FCM + SSE), acknowledge it, then resolve it."""
+    __tablename__ = "incidents"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    reported_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    reporter_role = Column(String, nullable=True)
+    reporter_name = Column(EncryptedStr, nullable=True)  # PII
+    lot_no = Column(EncryptedStr, nullable=True)          # PII, snapshot at report time
+    kind = Column(String, nullable=False, default="panic")   # panic|medical|fire|security|other
+    status = Column(String, nullable=False, default="OPEN", index=True)  # OPEN|ACKNOWLEDGED|RESOLVED
+    note = Column(String, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    acknowledged_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    acknowledged_at = Column(Integer, nullable=True)
+    resolved_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(Integer, nullable=True)
+    created_at = Column(Integer, nullable=False, default=time.time, index=True)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "reported_by": str(self.reported_by) if self.reported_by else None,
+            "reporter_role": self.reporter_role,
+            "reporter_name": self.reporter_name,
+            "lot_no": self.lot_no,
+            "kind": self.kind,
+            "status": self.status,
+            "note": self.note,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "acknowledged_by": str(self.acknowledged_by) if self.acknowledged_by else None,
+            "acknowledged_at": self.acknowledged_at,
+            "resolved_by": str(self.resolved_by) if self.resolved_by else None,
+            "resolved_at": self.resolved_at,
             "created_at": self.created_at,
         }
 

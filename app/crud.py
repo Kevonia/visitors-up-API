@@ -339,6 +339,7 @@ def delete_permission(db: Session, permission_id: str):
 
 # CRUD operations for Visitor
 def create_visitor(db: Session, visitor: schemas.VisitorCreate):
+    import uuid as _uuid
     logger.info(f"Creating visitor with name: {visitor.name}")
     db_visitor = models.Visitor(
         name=visitor.name,
@@ -349,6 +350,11 @@ def create_visitor(db: Session, visitor: schemas.VisitorCreate):
         valid_until=visitor.valid_until,
         phone=visitor.phone,
         vehicle_plate=visitor.vehicle_plate,
+        schedule_days=visitor.schedule_days,
+        schedule_start=visitor.schedule_start,
+        schedule_end=visitor.schedule_end,
+        # Public share token backs the pre-registration link.
+        share_token=_uuid.uuid4().hex,
     )
     db.add(db_visitor)
     db.commit()
