@@ -116,6 +116,30 @@ def _resident_category(v) -> str:
     return r.list_category.value if r and r.list_category else None
 
 
+@router.get("/residents")
+def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
+    """Guard resident directory: verify authorized residents at the gate. Returns
+    name, lot, phone (from the linked user), standing list and a real count of
+    authorized vehicles (the resident's registered visitors that have a plate)."""
+    residents = db.query(models.Resident).all()
+    out = []
+    for r in residents:
+        vehicles = sum(
+            1 for v in (r.visitors or []) if (v.vehicle_plate or "").strip()
+        )
+        out.append({
+            "id": str(r.id),
+            "name": r.name or "Resident",
+            "lot_no": r.lot_no,
+            "phone": r.user.phone_number if r.user else None,
+            "list_category": r.list_category.value if r.list_category else "WHITE",
+            "authorized_vehicles": vehicles,
+            "role": "OWNER",
+        })
+    out.sort(key=lambda x: (x["lot_no"] or ""))
+    return out
+
+
 def _visitor_result(db: Session, v: "models.Visitor") -> dict:
     open_entry = (
         db.query(models.GateEntry)
