@@ -55,6 +55,22 @@ def _credentials():
     return _creds, _project_id
 
 
+# Map a notification's data `type` to the Android channel + raw sound the client
+# created (vms_core PushService). The channel carries the sound on Android 8+;
+# the `sound` field covers pre-O devices.
+def _android_config(data: Optional[dict]) -> dict:
+    t = str((data or {}).get("type", ""))
+    channel, sound = "tg_gate", "ping"  # default: visitor.* / gate.*
+    if t.startswith("incident"):
+        channel, sound = "tg_alerts", "alert"
+    elif t.startswith("announcement") or t.startswith("maintenance"):
+        channel, sound = "tg_updates", "chime"
+    return {
+        "priority": "high",
+        "notification": {"channel_id": channel, "sound": sound},
+    }
+
+
 def send_to_tokens(tokens, title: str, body: str, data: Optional[dict] = None) -> None:
     """Send a notification to a list of FCM tokens. Best-effort; never raises."""
     tokens = [t for t in (tokens or []) if t]
@@ -72,7 +88,13 @@ def send_to_tokens(tokens, title: str, body: str, data: Optional[dict] = None) -
     headers = {"Authorization": f"Bearer {bearer}", "Content-Type": "application/json"}
     dead: list[str] = []
     for tok in tokens:
-        msg = {"message": {"token": tok, "notification": {"title": title, "body": body}}}
+        msg = {
+            "message": {
+                "token": tok,
+                "notification": {"title": title, "body": body},
+                "android": _android_config(data),
+            }
+        }
         if data:
             msg["message"]["data"] = {k: str(v) for k, v in data.items()}
         try:
