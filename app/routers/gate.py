@@ -120,21 +120,32 @@ def _resident_category(v) -> str:
 @router.get("/residents")
 def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
     """Guard resident directory: verify authorized residents at the gate. Returns
-    name, lot, phone (from the linked user), standing list and a real count of
-    authorized vehicles (the resident's registered visitors that have a plate)."""
+    name, lot, phone (from the linked user), standing list (White/Yellow/Red) and
+    the number of the resident's visitors currently on-site (open gate entries)."""
+    from sqlalchemy import func
     residents = db.query(models.Resident).all()
+    # One grouped query for currently-on-site visitor counts per resident.
+    onsite_rows = (
+        db.query(models.GateEntry.resident_id, func.count(models.GateEntry.id))
+        .filter(models.GateEntry.exit_time.is_(None))
+        .group_by(models.GateEntry.resident_id)
+        .all()
+    )
+    onsite_by_resident = {str(rid): cnt for rid, cnt in onsite_rows if rid}
     out = []
     for r in residents:
-        vehicles = sum(
-            1 for v in (r.visitors or []) if (v.vehicle_plate or "").strip()
-        )
         out.append({
             "id": str(r.id),
             "name": r.name or "Resident",
             "lot_no": r.lot_no,
             "phone": r.user.phone_number if r.user else None,
             "list_category": r.list_category.value if r.list_category else "WHITE",
-            "authorized_vehicles": vehicles,
+            "visitors_on_site": onsite_by_resident.get(str(r.id), 0),
+            # Kept for backward-compat with already-shipped app builds; the new
+            # directory shows visitors_on_site instead.
+            "authorized_vehicles": sum(
+                1 for v in (r.visitors or []) if (v.vehicle_plate or "").strip()
+            ),
             "role": "OWNER",
         })
     out.sort(key=lambda x: (x["lot_no"] or ""))
