@@ -89,6 +89,15 @@ services:
     depends_on:
       - web
 
+  # Public marketing landing page (static HTML). No API calls, no build step.
+  # Caddy serves it at its own subdomain (see Caddyfile); the host port is for
+  # local/no-TLS access. Override MARKETING_PORT to avoid clashes.
+  marketing:
+    build:
+      context: ../marketing
+    ports:
+      - "${MARKETING_PORT:-8082}:80"
+
 volumes:
   postgres_data:
   redis_data:

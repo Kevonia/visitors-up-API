@@ -21,6 +21,7 @@ services:
     depends_on:
       - web
       - admin
+      - marketing
 
 volumes:
   caddy_data:

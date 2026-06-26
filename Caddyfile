@@ -16,3 +16,15 @@
 		}
 	}
 }
+
+# Public marketing site on its own subdomain (sslip.io resolves any label to the
+# same IP). Keeps the admin app untouched at the apex. When you move to a real
+# domain, flip these: marketing at the apex, admin on app.<domain>.
+www.3.134.90.19.sslip.io {
+	reverse_proxy marketing:80
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+}
