@@ -62,7 +62,8 @@ def _android_config(data: Optional[dict]) -> dict:
     t = str((data or {}).get("type", ""))
     channel, sound = "tg_gate", "ping"  # default: visitor.* / gate.*
     if t.startswith("incident"):
-        channel, sound = "tg_alerts", "alert"
+        # tg_alerts_v2: the siren-sound emergency channel (see vms_core PushService).
+        channel, sound = "tg_alerts_v2", "alert"
     elif t.startswith("announcement") or t.startswith("maintenance"):
         channel, sound = "tg_updates", "chime"
     return {
