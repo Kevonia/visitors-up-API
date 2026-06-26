@@ -19,7 +19,8 @@ from ..utilities.db_util import get_db
 from ..config.auth import require_roles, oauth2_scheme, _is_token_blacklisted
 from ..config.config import settings
 from ..notifications.service import notify_guest_movement
-from ..realtime import event_stream
+from ..realtime import event_stream, publish_event
+from ..services.gate_control import trigger_gate
 from ..services.zoho_sync import sync_resident, cache_is_fresh
 from ..zoho_integration.zoho_client import ZohoClient
 from ..logging_config import logger
@@ -369,6 +370,84 @@ def _authorize_gate_token(token: str) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this resource.",
         )
+
+
+# ── Gate opening (security app) ──────────────────────────────────────────────
+# Debounce window: ignore a second open of the same gate within N seconds so a
+# double-tap (or a retried request) doesn't pulse the relay twice.
+_OPEN_DEBOUNCE_SECONDS = 4
+
+
+@router.get("/gates", response_model=list[schemas.GateSummary])
+def list_gates_for_guard(db: Session = Depends(get_db), _user=Depends(gate_user)):
+    """Enabled gates the guard can open, for the app's gate picker."""
+    rows = (db.query(models.Gate)
+            .filter(models.Gate.enabled.is_(True))
+            .order_by(models.Gate.name).all())
+    return [
+        {"id": str(g.id), "name": g.name, "location": g.location,
+         "driver": g.driver.value if g.driver else "MANUAL"}
+        for g in rows
+    ]
+
+
+@router.post("/{gate_id}/open", response_model=schemas.GateOpenResult)
+def open_gate(
+    gate_id: str,
+    payload: schemas.GateOpenRequest,
+    db: Session = Depends(get_db),
+    user=Depends(gate_user),
+    request: Request = None,
+):
+    """A guard opens a gate. Triggers the relay, records an audited open event,
+    and broadcasts it live to the admin/gate console."""
+    gate = db.query(models.Gate).filter(models.Gate.id == gate_id).first()
+    if not gate:
+        raise HTTPException(status_code=404, detail="Gate not found")
+    if not gate.enabled:
+        raise HTTPException(status_code=409, detail="Gate is disabled")
+
+    # Debounce: a very recent open of this gate means the relay already fired.
+    now = int(time.time())
+    recent = (db.query(models.GateOpenEvent)
+              .filter(models.GateOpenEvent.gate_id == gate.id,
+                      models.GateOpenEvent.success.is_(True),
+                      models.GateOpenEvent.created_at >= now - _OPEN_DEBOUNCE_SECONDS)
+              .first())
+    if recent:
+        return {"success": True, "detail": "Gate already opening (debounced)",
+                "event": recent.to_dict()}
+
+    ok, detail = trigger_gate(gate.driver, gate.config_dict())
+    event = models.GateOpenEvent(
+        gate_id=gate.id,
+        opened_by=user.id,
+        visitor_id=payload.visitor_id,
+        entry_id=payload.entry_id,
+        reason=payload.reason,
+        source="app",
+        success=ok,
+        detail=detail,
+        created_at=now,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    logger.info(f"Gate '{gate.name}' open by {user.email}: ok={ok} ({detail})")
+    audit.record("gate.open", user=user, request=request,
+                 status="success" if ok else "failure",
+                 detail=f"gate={gate.id} reason={payload.reason} ok={ok}")
+    try:
+        publish_event("gate.opened", event.to_dict())
+    except Exception as e:
+        logger.warning(f"Gate open SSE publish failed: {e}")
+
+    if not ok:
+        # Surface the hardware failure to the guard so they open manually, but
+        # keep the audited (failed) attempt above.
+        raise HTTPException(status_code=502, detail=f"Gate did not open: {detail}")
+    return {"success": ok, "detail": detail, "event": event.to_dict()}
 
 
 @router.get("/events", include_in_schema=False)

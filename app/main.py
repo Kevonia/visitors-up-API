@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant, audit, incidents, passes, analytics, maintenance
+from .routers import user, resident, allowlist, role, permission, visitor, auth, user_visitor, gate, guard_account, zoho_admin, announcements, tenant, audit, incidents, passes, analytics, maintenance, gates
 from .seed_roles import seed_roles  # Import the roles seeder function
 # from .seed_permissions import seed_permissions  # Import the permissions seeder function
 from .logging_config import logger
@@ -173,6 +173,9 @@ app.include_router(passes.router, prefix="/api/v1", tags=["Passes"])
 app.include_router(analytics.router, prefix="/api/v1/admin", tags=["Analytics"], dependencies=[Depends(admin_or_manager)])
 # Maintenance / "Report Issue": residents file (per-route auth); managers manage.
 app.include_router(maintenance.router, prefix="/api/v1", tags=["Maintenance"])
+# Gate configuration (admin): manage physical gates + test the relay. The
+# guard-facing open/list endpoints live in the gate router above.
+app.include_router(gates.router, prefix="/api/v1/admin", tags=["Gates"], dependencies=[Depends(admin_or_manager)])
 # app.include_router(zoho_router, prefix="/api/v1/zoho", tags=["Zoho Invoice"])
 
 @app.on_event("startup")

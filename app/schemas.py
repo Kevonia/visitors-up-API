@@ -273,6 +273,73 @@ class MaintenanceOut(BaseModel):
     updated_at: int
 
 
+# Gate (physical gate-opening) schemas
+class GateBase(BaseModel):
+    name: str
+    location: Optional[str] = None
+    driver: str = "MANUAL"                 # MANUAL | HTTP | GSM
+    config: Optional[Dict] = None          # driver settings (e.g. {"url": "..."})
+    enabled: bool = True
+
+
+class GateCreate(GateBase):
+    pass
+
+
+class GateUpdate(BaseModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
+    driver: Optional[str] = None
+    config: Optional[Dict] = None
+    enabled: Optional[bool] = None
+
+
+class GateOut(BaseModel):
+    id: str
+    name: str
+    location: Optional[str] = None
+    driver: str
+    config: Optional[Dict] = None
+    enabled: bool
+    created_at: int
+    updated_at: int
+
+
+class GateSummary(BaseModel):
+    """Slim gate info the security app needs to render the open button."""
+    id: str
+    name: str
+    location: Optional[str] = None
+    driver: str
+
+
+class GateOpenRequest(BaseModel):
+    reason: Optional[str] = None           # visitor|delivery|resident|emergency
+    visitor_id: Optional[str] = None
+    entry_id: Optional[str] = None
+
+
+class GateOpenEventOut(BaseModel):
+    id: str
+    gate_id: Optional[str] = None
+    gate_name: Optional[str] = None
+    opened_by: Optional[str] = None
+    opened_by_email: Optional[str] = None
+    visitor_id: Optional[str] = None
+    entry_id: Optional[str] = None
+    reason: Optional[str] = None
+    source: str
+    success: bool
+    detail: Optional[str] = None
+    created_at: int
+
+
+class GateOpenResult(BaseModel):
+    success: bool
+    detail: str
+    event: GateOpenEventOut
+
+
 # Guard account schemas
 class GuardCreate(BaseModel):
     email: str

@@ -1,10 +1,10 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Float, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Float, Boolean, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from .database import Base
 import time
 import uuid
-from .enums import StatusEnum, DelinquencyEnum, VisitType, VisitorStatus, ListCategory
+from .enums import StatusEnum, DelinquencyEnum, VisitType, VisitorStatus, ListCategory, GateDriver
 from .security.pii import EncryptedStr
 
 # Association table for many-to-many relationship between Role and Permission
@@ -501,4 +501,85 @@ class DeviceToken(Base):
             "platform": self.platform,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+        }
+
+
+class Gate(Base):
+    """A physical gate the security app can open.
+
+    `driver` selects how the open command reaches the hardware; `config` holds
+    the driver's settings (e.g. the relay URL) as a JSON string and is encrypted
+    at rest because it can contain credentials/tokens.
+    """
+    __tablename__ = "gates"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)                     # "North Gate"
+    location = Column(String, nullable=True)                  # free-text description
+    driver = Column(Enum(GateDriver), nullable=False, default=GateDriver.MANUAL)
+    config = Column(EncryptedStr, nullable=True)              # JSON string of driver settings (may hold secrets)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(Integer, nullable=False, default=time.time)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def config_dict(self) -> dict:
+        import json
+        if not self.config:
+            return {}
+        try:
+            data = json.loads(self.config)
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    def to_dict(self, include_config: bool = True):
+        d = {
+            "id": str(self.id),
+            "name": self.name,
+            "location": self.location,
+            "driver": self.driver.value if self.driver else GateDriver.MANUAL.value,
+            "enabled": bool(self.enabled),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        if include_config:
+            d["config"] = self.config_dict()
+        return d
+
+
+class GateOpenEvent(Base):
+    """An audited record of an 'open gate' command (or a test trigger).
+
+    Mirrors the accountability of GateEntry: who opened which gate, when, why,
+    and whether the hardware reported success. Optionally linked to the visitor
+    and gate entry it was opened for.
+    """
+    __tablename__ = "gate_open_events"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    gate_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("gates.id"), nullable=True, index=True)
+    opened_by = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # the guard/admin
+    visitor_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("visitors.id"), nullable=True)
+    entry_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("gate_entries.id"), nullable=True)
+    reason = Column(String, nullable=True)        # visitor|delivery|resident|emergency|...
+    source = Column(String, nullable=False, default="app")   # app | auto | test
+    success = Column(Boolean, nullable=False, default=False)
+    detail = Column(String, nullable=True)        # driver message / error
+    created_at = Column(Integer, nullable=False, default=time.time, index=True)
+
+    gate = relationship("Gate", lazy="joined")
+    opener = relationship("User", lazy="joined")
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "gate_id": str(self.gate_id) if self.gate_id else None,
+            "gate_name": self.gate.name if self.gate else None,
+            "opened_by": str(self.opened_by) if self.opened_by else None,
+            "opened_by_email": self.opener.email if self.opener else None,
+            "visitor_id": str(self.visitor_id) if self.visitor_id else None,
+            "entry_id": str(self.entry_id) if self.entry_id else None,
+            "reason": self.reason,
+            "source": self.source,
+            "success": bool(self.success),
+            "detail": self.detail,
+            "created_at": self.created_at,
         }

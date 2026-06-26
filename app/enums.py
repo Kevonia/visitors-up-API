@@ -41,3 +41,11 @@ class VisitorStatus(str, Enum):
     USED = "USED"              # one-time pass already consumed
     EXPIRED = "EXPIRED"        # past valid_until
     REVOKED = "REVOKED"        # resident/admin cancelled
+
+
+# Gate hardware -------------------------------------------------------------
+class GateDriver(str, Enum):
+    """How an "open gate" command reaches the physical gate operator."""
+    MANUAL = "MANUAL"          # no hardware: just audit the intent (guard opens by hand)
+    HTTP = "HTTP"              # pulse a relay over HTTP (Shelly/Tasmota/Home-Assistant/webhook)
+    GSM = "GSM"                # GSM/SIM relay — triggered via an SMS/HTTP gateway (config-driven)
