@@ -4,13 +4,14 @@ Residents start a checkout; the provider redirects the customer back to our
 public return endpoint (and/or posts a webhook) where the payment is finalized.
 A reconcile cron (scripts/reconcile_payments.py) catches anything left pending.
 """
+import datetime
 import json
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, crud, audit
@@ -208,3 +209,60 @@ def list_payments(
         q = q.filter(models.Payment.status == status.upper())
     rows = q.order_by(desc(models.Payment.created_at)).limit(min(limit, 1000)).all()
     return [p.to_dict() for p in rows]
+
+
+@router.get("/admin/payments/summary")
+def payments_summary(db: Session = Depends(get_db), _user=Depends(manager)):
+    """Headline numbers for the payments dashboard."""
+    now = datetime.datetime.utcnow()
+    month_start = int(datetime.datetime(now.year, now.month, 1).timestamp())
+
+    def _completed_sum(since: Optional[int] = None) -> float:
+        q = db.query(func.coalesce(func.sum(models.Payment.amount), 0.0)).filter(
+            models.Payment.status == "COMPLETED")
+        if since is not None:
+            q = q.filter(models.Payment.paid_at >= since)
+        return float(q.scalar() or 0)
+
+    total_outstanding = float(
+        db.query(func.coalesce(func.sum(models.Resident.outstanding_balance), 0.0)).scalar() or 0)
+    delinquent = db.query(func.count(models.Resident.id)).filter(
+        models.Resident.delinquency_status == "ACTIVE").scalar() or 0
+
+    def _count(status: str) -> int:
+        return db.query(func.count(models.Payment.id)).filter(
+            models.Payment.status == status).scalar() or 0
+
+    collected_total = _completed_sum()
+    return {
+        "collected_this_month": _completed_sum(month_start),
+        "collected_total": collected_total,
+        "total_outstanding": total_outstanding,
+        "delinquent_residents": int(delinquent),
+        "completed_count": _count("COMPLETED"),
+        "pending_count": _count("PENDING"),
+        "failed_count": _count("FAILED"),
+        # Share of (collected + still-outstanding) that has been collected.
+        "collection_rate": round(
+            collected_total / (collected_total + total_outstanding) * 100, 1)
+        if (collected_total + total_outstanding) > 0 else 0.0,
+    }
+
+
+@router.get("/admin/payments/by-day")
+def payments_by_day(days: int = 30, db: Session = Depends(get_db), _user=Depends(manager)):
+    """Daily completed-collection totals for the last `days` days (oldest first)."""
+    days = max(1, min(days, 90))
+    since = int(time.time()) - days * 86400
+    rows = (db.query(models.Payment)
+            .filter(models.Payment.status == "COMPLETED", models.Payment.paid_at >= since)
+            .all())
+    buckets: dict[str, float] = {}
+    for p in rows:
+        day = datetime.datetime.utcfromtimestamp(p.paid_at or p.created_at).strftime("%Y-%m-%d")
+        buckets[day] = buckets.get(day, 0.0) + float(p.amount or 0)
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = datetime.datetime.utcfromtimestamp(int(time.time()) - i * 86400).strftime("%Y-%m-%d")
+        out.append({"date": d, "total": round(buckets.get(d, 0.0), 2)})
+    return out
