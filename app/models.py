@@ -583,3 +583,47 @@ class GateOpenEvent(Base):
             "detail": self.detail,
             "created_at": self.created_at,
         }
+
+
+class Payment(Base):
+    """An in-app dues payment via a provider (WiPay / DimePay / test).
+
+    Created PENDING when a resident starts checkout; flipped to COMPLETED by the
+    provider's return/webhook (or the reconciliation cron). On COMPLETED we mark
+    the matching CachedInvoice paid and recompute the resident's standing.
+    """
+    __tablename__ = "payments"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    resident_id = Column(SQLAlchemyUUID(as_uuid=True), ForeignKey("residents.id"), nullable=False, index=True)
+    invoice_id = Column(String, nullable=True, index=True)      # accounting (Zoho/QBO) invoice id
+    invoice_number = Column(String, nullable=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String, nullable=False, default="JMD")    # JMD | USD
+    status = Column(String, nullable=False, default="PENDING", index=True)  # PENDING|COMPLETED|FAILED|CANCELLED|EXPIRED
+    provider = Column(String, nullable=False)                   # wipay | dimepay | test
+    provider_ref = Column(String, nullable=True, index=True)    # provider checkout/order/txn id
+    provider_status = Column(String, nullable=True)             # raw provider status string
+    platform_fee_pct = Column(Float, nullable=False, default=0)
+    raw = Column(EncryptedStr, nullable=True)                   # JSON of the latest provider payload (may hold PII)
+    created_at = Column(Integer, nullable=False, default=time.time, index=True)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+    paid_at = Column(Integer, nullable=True)
+
+    resident = relationship("Resident", lazy="joined")
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "resident_id": str(self.resident_id) if self.resident_id else None,
+            "resident_name": self.resident.name if self.resident else None,
+            "lot_no": self.resident.lot_no if self.resident else None,
+            "invoice_id": self.invoice_id,
+            "invoice_number": self.invoice_number,
+            "amount": self.amount or 0,
+            "currency": self.currency,
+            "status": self.status,
+            "provider": self.provider,
+            "provider_ref": self.provider_ref,
+            "created_at": self.created_at,
+            "paid_at": self.paid_at,
+        }

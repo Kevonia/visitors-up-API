@@ -42,3 +42,16 @@ def classify_contact(contact: dict) -> ListCategory:
 
 def is_delinquent(category: ListCategory) -> bool:
     return category == ListCategory.RED
+
+
+def classify_from_balance(outstanding: float, on_payment_plan: str = "") -> ListCategory:
+    """Reclassify from a known outstanding balance (no Zoho contact needed).
+
+    Used after an in-app payment changes the balance: Yellow if on a payment
+    plan; Red if still over the threshold; else White.
+    """
+    if (on_payment_plan or "").strip().upper() == "Y":
+        return ListCategory.YELLOW
+    if (outstanding or 0) > settings.red_balance_threshold:
+        return ListCategory.RED
+    return ListCategory.WHITE

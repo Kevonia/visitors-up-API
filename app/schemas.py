@@ -340,6 +340,38 @@ class GateOpenResult(BaseModel):
     event: GateOpenEventOut
 
 
+# Payment (in-app dues payment) schemas
+class PaymentCreate(BaseModel):
+    amount: float
+    currency: Optional[str] = "JMD"
+    invoice_id: Optional[str] = None
+    invoice_number: Optional[str] = None
+    provider: Optional[str] = None          # falls back to the configured default
+
+
+class PaymentCheckoutOut(BaseModel):
+    payment_id: str
+    provider: str
+    checkout_url: str
+    status: str
+
+
+class PaymentOut(BaseModel):
+    id: str
+    resident_id: Optional[str] = None
+    resident_name: Optional[str] = None
+    lot_no: Optional[str] = None
+    invoice_id: Optional[str] = None
+    invoice_number: Optional[str] = None
+    amount: float
+    currency: str
+    status: str
+    provider: str
+    provider_ref: Optional[str] = None
+    created_at: int
+    paid_at: Optional[int] = None
+
+
 # Guard account schemas
 class GuardCreate(BaseModel):
     email: str

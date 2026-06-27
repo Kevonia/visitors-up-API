@@ -84,6 +84,38 @@ class Settings(BaseSettings):
     # Block checking in a visitor whose resident is RED (delinquent).
     gate_block_delinquent: bool = Field(default=True, env="GATE_BLOCK_DELINQUENT")
 
+    # ── In-app payments (WiPay / DimePay) ────────────────────────────────────
+    # Off by default; turn on once a provider's credentials are set. providers is
+    # a CSV of enabled provider names (wipay,dimepay,test). default_payment_provider
+    # is used when the client doesn't name one.
+    payments_enabled: bool = Field(default=False, env="PAYMENTS_ENABLED")
+    payments_providers: str = Field(default="", env="PAYMENTS_PROVIDERS")
+    default_payment_provider: str = Field(default="", env="DEFAULT_PAYMENT_PROVIDER")
+    # Absolute base the provider redirects back to after checkout, e.g.
+    # https://vms-api.onrender.com/api/v1/payments/return
+    payment_return_base_url: str = Field(default="", env="PAYMENT_RETURN_BASE_URL")
+    # Optional platform fee (%) recorded on each payment (0 = none).
+    platform_fee_pct: float = Field(default=0.0, env="PLATFORM_FEE_PCT")
+    # Reconcile PENDING payments older than this many minutes via the cron poll.
+    payment_pending_grace_minutes: int = Field(default=20, env="PAYMENT_PENDING_GRACE_MINUTES")
+
+    # WiPay (Jamaica) — hosted redirect checkout.
+    wipay_env: str = Field(default="sandbox", env="WIPAY_ENV")  # sandbox | live
+    wipay_base_url: str = Field(default="https://jm.wipayfinancial.com", env="WIPAY_BASE_URL")
+    wipay_account_number: str = Field(default="", env="WIPAY_ACCOUNT_NUMBER")  # business key
+    wipay_api_key: str = Field(default="", env="WIPAY_API_KEY")
+    wipay_country: str = Field(default="JM", env="WIPAY_COUNTRY")
+
+    # DimePay — REST API (client_key header). No webhooks → return + poll.
+    dimepay_env: str = Field(default="sandbox", env="DIMEPAY_ENV")  # sandbox | live
+    dimepay_base_url: str = Field(default="https://sandbox.api.dimepay.app/dapi/v1", env="DIMEPAY_BASE_URL")
+    dimepay_client_key: str = Field(default="", env="DIMEPAY_CLIENT_KEY")
+
+    # ── Accounting provider (Zoho today; QuickBooks optional) ────────────────
+    # Selects which accounting back-end syncs invoices/dues and receives payment
+    # write-backs. "zoho" (default, unchanged) or "quickbooks".
+    accounting_provider: str = Field(default="zoho", env="ACCOUNTING_PROVIDER")
+
     # JWT configuration
     secret_key: str = Field(..., env="SECRET_KEY")
     algorithm: str = Field(default="HS256", env="ALGORITHM")
