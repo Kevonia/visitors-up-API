@@ -67,6 +67,20 @@ envVarGroups:
       # --- Accounting provider (Zoho today; "quickbooks" optional) ---
       - key: ACCOUNTING_PROVIDER
         value: "zoho"
+      # QuickBooks Online (used only when ACCOUNTING_PROVIDER=quickbooks). The
+      # rotating refresh token + realm id are stored in the DB via the admin
+      # Connect flow, not here. QBO_REDIRECT_URI must equal the deployed
+      # /api/v1/admin/quickbooks/callback URL and be registered in the Intuit app.
+      - key: QBO_ENV
+        value: "sandbox"            # sandbox | production
+      - key: QBO_MINOR_VERSION
+        value: "65"
+      - key: QBO_REDIRECT_URI
+        value: ""
+      - key: QBO_CLIENT_ID
+        sync: false
+      - key: QBO_CLIENT_SECRET
+        sync: false
 
       # --- In-app payments (WiPay / DimePay) — OFF until keys are set ---
       - key: PAYMENTS_ENABLED
@@ -199,7 +213,7 @@ services:
     schedule: "0 6 * * *"      # daily 06:00 UTC (~1am Jamaica)
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: sh -c "python scripts/sync_zoho.py"
+    dockerCommand: sh -c "python scripts/sync_accounting.py"
     envVars:
       - fromGroup: vms-shared
       - key: DATABASE_URL

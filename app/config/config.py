@@ -116,6 +116,15 @@ class Settings(BaseSettings):
     # write-backs. "zoho" (default, unchanged) or "quickbooks".
     accounting_provider: str = Field(default="zoho", env="ACCOUNTING_PROVIDER")
 
+    # QuickBooks Online (OAuth2). The rotating refresh token + realm id are stored
+    # in the integration_tokens table (obtained via the admin Connect flow), not here.
+    qbo_client_id: str = Field(default="", env="QBO_CLIENT_ID")
+    qbo_client_secret: str = Field(default="", env="QBO_CLIENT_SECRET")
+    qbo_redirect_uri: str = Field(default="", env="QBO_REDIRECT_URI")
+    qbo_env: str = Field(default="sandbox", env="QBO_ENV")  # sandbox | production
+    qbo_base_url: str = Field(default="", env="QBO_BASE_URL")  # auto by env if blank
+    qbo_minor_version: str = Field(default="65", env="QBO_MINOR_VERSION")
+
     # JWT configuration
     secret_key: str = Field(..., env="SECRET_KEY")
     algorithm: str = Field(default="HS256", env="ALGORITHM")

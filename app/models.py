@@ -627,3 +627,25 @@ class Payment(Base):
             "created_at": self.created_at,
             "paid_at": self.paid_at,
         }
+
+
+class IntegrationToken(Base):
+    """OAuth credentials for an accounting integration whose refresh token
+    rotates (QuickBooks Online). One row per provider; updated on each refresh.
+    Secrets are encrypted at rest."""
+    __tablename__ = "integration_tokens"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    provider = Column(String, nullable=False, unique=True, index=True)  # "quickbooks"
+    refresh_token = Column(EncryptedStr, nullable=True)
+    realm_id = Column(String, nullable=True)        # QBO company id
+    access_token = Column(EncryptedStr, nullable=True)  # fallback; Redis is primary
+    created_at = Column(Integer, nullable=False, default=time.time)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def to_dict(self):
+        return {
+            "provider": self.provider,
+            "realm_id": self.realm_id,
+            "connected": bool(self.refresh_token and self.realm_id),
+            "updated_at": self.updated_at,
+        }
