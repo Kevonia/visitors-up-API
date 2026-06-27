@@ -20,6 +20,8 @@ from ..logging_config import logger
 router = APIRouter()
 
 manager = require_roles(RoleEnum.ADMIN.value, RoleEnum.MANAGER.value)
+# Guards/managers/admins may *view* requests in the security app (read-only).
+staff = require_roles(RoleEnum.SECURITY.value, RoleEnum.ADMIN.value, RoleEnum.MANAGER.value)
 _VALID_STATUS = {"OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"}
 
 
@@ -91,6 +93,21 @@ def all_requests(
     if status:
         q = q.filter(models.MaintenanceRequest.status == status.upper())
     rows = q.order_by(desc(models.MaintenanceRequest.created_at)).limit(limit).all()
+    return [r.to_dict() for r in rows]
+
+
+@router.get("/staff/maintenance", response_model=list[schemas.MaintenanceOut])
+def staff_requests(
+    status: Optional[str] = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    _user=Depends(staff),
+):
+    """Read-only list for the security app (guards/managers), newest first."""
+    q = db.query(models.MaintenanceRequest)
+    if status:
+        q = q.filter(models.MaintenanceRequest.status == status.upper())
+    rows = q.order_by(desc(models.MaintenanceRequest.created_at)).limit(min(limit, 500)).all()
     return [r.to_dict() for r in rows]
 
 
