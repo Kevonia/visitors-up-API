@@ -34,11 +34,17 @@ _GATE_ROLES = {RoleEnum.SECURITY.value, RoleEnum.ADMIN.value, RoleEnum.MANAGER.v
 
 
 def _ensure_resident_fresh(db: Session, resident) -> None:
-    """Best-effort: refresh a resident's payment list/delinquency from Zoho if
-    the cache is stale, so the gate's block decision reflects today's status.
-    Never blocks the gate on a Zoho hiccup — falls back to the cached value."""
+    """Keep the gate's block decision based on the CACHED status; never block a
+    check-in on a synchronous Zoho HTTP call (critical under load). When the
+    cache is stale, refresh in the background; if the queue is unavailable, fall
+    back to a best-effort inline refresh that still won't fail the gate."""
     if not resident or cache_is_fresh(resident, settings.zoho_cache_ttl):
         return
+    from ..queue import enqueue
+    from ..jobs import refresh_resident_zoho
+    if enqueue(refresh_resident_zoho, str(resident.id)):
+        return  # refreshed out-of-band; this check-in uses the cached category
+    # Queue unavailable → old inline behaviour (best-effort, cached on failure).
     try:
         if sync_resident(db, resident, zoho_client, with_invoices=False):
             db.commit()
@@ -224,6 +230,18 @@ def log_entry(
             detail="Resident is on the delinquent (Red) list — entry not permitted. Please contact management.",
         )
 
+    # Consume one-time passes atomically BEFORE creating the entry: a conditional
+    # UPDATE (status ACTIVE → USED) row-locks the visitor, so two concurrent
+    # scans of the same pass can't both check in — the loser matches 0 rows.
+    if visitor.visit_type == VisitType.ONE_TIME:
+        claimed = (db.query(models.Visitor)
+                   .filter(models.Visitor.id == visitor.id,
+                           models.Visitor.status == VisitorStatus.ACTIVE)
+                   .update({"status": VisitorStatus.USED}, synchronize_session=False))
+        if not claimed:
+            db.rollback()
+            raise HTTPException(status_code=403, detail="This pass has already been used.")
+
     lot_no = visitor.created_by_user.lot_no if visitor.created_by_user else None
     entry = models.GateEntry(
         visitor_id=visitor.id,
@@ -234,11 +252,6 @@ def log_entry(
         notes=payload.notes,
     )
     db.add(entry)
-
-    # Consume one-time passes so they cannot be reused.
-    if visitor.visit_type == VisitType.ONE_TIME:
-        visitor.status = VisitorStatus.USED
-
     db.commit()
     db.refresh(entry)
     logger.info(f"Gate entry logged for visitor {visitor.name} (lot {lot_no}) by {user.email}")

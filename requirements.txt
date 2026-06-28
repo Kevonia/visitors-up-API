@@ -1,6 +1,7 @@
 # Core FastAPI & ASGI
 fastapi==0.109.1
 uvicorn==0.27.0
+gunicorn==21.2.0          # prod process manager (multi worker, via UvicornWorker)
 python-multipart==0.0.6
 
 # Database & ORM
@@ -20,6 +21,7 @@ cryptography==42.0.2
 
 # Redis & Caching
 redis==5.0.1
+rq==1.16.2                 # background worker queue on the existing Redis
 hiredis==2.2.3
 fastapi-cache2==0.2.1
 aiocache==0.12.1

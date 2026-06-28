@@ -19,7 +19,16 @@ if not SQLALCHEMY_DATABASE_URL:
 
 logger.info("Connecting to the database...")
 
-engine = create_engine(settings.database_url)
+# Pool sized for concurrent load. Keep workers × (pool_size + max_overflow)
+# under Postgres max_connections (~100). pre_ping drops dead connections so a
+# request after an idle period doesn't fail; recycle avoids stale sockets.
+engine = create_engine(
+    settings.database_url,
+    pool_size=8,
+    max_overflow=12,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

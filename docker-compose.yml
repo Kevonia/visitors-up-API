@@ -39,6 +39,29 @@ services:
              python scripts/seed_prod.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+  # RQ background worker: runs off-request jobs (stale Zoho refresh at the gate,
+  # mass announcement push). Same image/env as web; no ports, no migrations.
+  worker:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
+      POSTGRES_DB: ${POSTGRES_DB:-vms}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@db:5432/${POSTGRES_DB:-vms}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "rq worker -u $${REDIS_URL} default"
+
   # Dev email + SMS catcher: captures all notifications (SMS arrive as emails).
   # Web UI at http://localhost:8025, SMTP on 1025.
   mailpit:

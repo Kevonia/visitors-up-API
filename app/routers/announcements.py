@@ -59,18 +59,20 @@ def create_announcement(
         created.get("title", ""), created.get("body", ""), created.get("category", "info"),
     )
     # Push residents too, but only for a PUBLISHED announcement (not a draft).
+    # Fanning out to every resident can be hundreds of FCM sends, so do it in the
+    # background; fall back to inline only if the queue is unavailable.
     if created.get("published_at"):
-        try:
-            body = (created.get("body") or "").strip()
-            push.send_to_tokens(
-                push.tokens_for_residents(db),
-                created.get("title") or "New announcement",
-                body[:140] if body else "Open the app to read the latest update.",
-                data={"type": "announcement.created",
-                      "id": str(created.get("id") or "")},
-            )
-        except Exception as e:
-            logger.warning(f"FCM announcement push failed: {e}")
+        body = (created.get("body") or "").strip()
+        title = created.get("title") or "New announcement"
+        preview = body[:140] if body else "Open the app to read the latest update."
+        data = {"type": "announcement.created", "id": str(created.get("id") or "")}
+        from ..queue import enqueue
+        from ..jobs import broadcast_residents_push
+        if not enqueue(broadcast_residents_push, title, preview, data):
+            try:
+                push.send_to_tokens(push.tokens_for_residents(db), title, preview, data=data)
+            except Exception as e:
+                logger.warning(f"FCM announcement push failed: {e}")
     return created
 
 
