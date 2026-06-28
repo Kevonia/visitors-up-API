@@ -23,10 +23,14 @@ from ..logging_config import logger
 from ..payments import get_provider, enabled_providers
 from ..payments.factory import default_provider_name
 from ..services.payment_service import finalize_payment
+from ..utilities.ratelimit import enforce
 
 router = APIRouter()
 
 manager = require_roles(RoleEnum.ADMIN.value, RoleEnum.MANAGER.value)
+
+# Collapse a resident's repeated "Pay" taps within this window into one PENDING.
+_DEDUPE_WINDOW_SECONDS = 90
 
 
 def _return_url(provider: str) -> str:
@@ -79,25 +83,47 @@ def create_payment(
     if not resident:
         raise HTTPException(status_code=403, detail="Only residents can make payments.")
 
+    # Throttle payment starts per resident (abuse + accidental hammering).
+    enforce(request, action="payment_create", limit=10, window_seconds=300,
+            by="user", subject=str(resident.id))
+
     try:
         provider = get_provider(payload.provider)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
     now = int(time.time())
-    payment = models.Payment(
-        resident_id=resident.id,
-        invoice_id=payload.invoice_id,
-        invoice_number=payload.invoice_number,
-        amount=float(payload.amount),
-        currency=(payload.currency or "JMD").upper(),
-        status="PENDING",
-        provider=provider.name,
-        platform_fee_pct=settings.platform_fee_pct,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(payment)
+    amount = float(payload.amount)
+    # Idempotency: a double-tap shouldn't create two PENDING rows. Reuse a recent
+    # PENDING payment for the same (resident, invoice, amount, provider) and just
+    # re-issue a fresh checkout for it.
+    dedupe_q = (db.query(models.Payment)
+                .filter(models.Payment.resident_id == resident.id,
+                        models.Payment.status == "PENDING",
+                        models.Payment.provider == provider.name,
+                        models.Payment.amount == amount,
+                        models.Payment.created_at >= now - _DEDUPE_WINDOW_SECONDS))
+    dedupe_q = (dedupe_q.filter(models.Payment.invoice_id == payload.invoice_id)
+                if payload.invoice_id
+                else dedupe_q.filter(models.Payment.invoice_id.is_(None)))
+    payment = dedupe_q.order_by(desc(models.Payment.created_at)).first()
+    if payment:
+        payment.updated_at = now
+        logger.info("Reusing recent PENDING payment %s (double-tap dedupe)", payment.id)
+    else:
+        payment = models.Payment(
+            resident_id=resident.id,
+            invoice_id=payload.invoice_id,
+            invoice_number=payload.invoice_number,
+            amount=amount,
+            currency=(payload.currency or "JMD").upper(),
+            status="PENDING",
+            provider=provider.name,
+            platform_fee_pct=settings.platform_fee_pct,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(payment)
     db.commit()
     db.refresh(payment)
 
@@ -160,6 +186,7 @@ def _lookup_payment(db: Session, params: dict) -> Optional["models.Payment"]:
 @router.api_route("/payments/return/{provider}", methods=["GET", "POST"], include_in_schema=False)
 async def payment_return(provider: str, request: Request, db: Session = Depends(get_db)):
     """Public: the provider redirects the customer here after checkout."""
+    enforce(request, action="payment_return", limit=60, window_seconds=60)
     params = await _merge_params(request)
     payment = _lookup_payment(db, params)
     if not payment:
@@ -179,6 +206,7 @@ async def payment_return(provider: str, request: Request, db: Session = Depends(
 @router.post("/payments/webhook/{provider}", include_in_schema=False)
 async def payment_webhook(provider: str, request: Request, db: Session = Depends(get_db)):
     """Public, signature-verified provider webhook (e.g. WiPay callback)."""
+    enforce(request, action="payment_webhook", limit=120, window_seconds=60)
     body = await request.body()
     try:
         prov = get_provider(provider)

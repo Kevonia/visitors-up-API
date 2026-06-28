@@ -24,7 +24,77 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Gate 1: API tests (unit + concurrency regression) must pass ────────────
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: vms
+          POSTGRES_PASSWORD: vms
+          POSTGRES_DB: vms
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U vms" --health-interval 5s --health-timeout 5s --health-retries 15
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://vms:vms@localhost:5432/vms
+      POSTGRES_USER: vms
+      POSTGRES_PASSWORD: vms
+      POSTGRES_DB: vms
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-secret-key-not-for-prod-0123456789
+      PII_ENCRYPTION_KEY: ci-only-pii-key
+      CLIENT_ID: ci
+      CLIENT_SECRET: ci
+      REFRESH_TOKEN: ci
+      ACCESS_TOKEN: ci
+      ZOHO_API_URL: https://example.invalid
+      PAYMENTS_PROVIDERS: wipay,dimepay,test
+      DEFAULT_PAYMENT_PROVIDER: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Apply migrations to the test DB
+        run: alembic upgrade head
+      - name: Run tests (payments abstraction + concurrency race regression)
+        # test_crud..py is an outdated pre-UUID unit test, excluded on purpose.
+        # `python -m pytest` puts the repo root on sys.path so `import app` works.
+        run: python -m pytest -q tests/test_payments.py tests/test_concurrency.py
+
+  # ── Gate 2: admin app must type-check ──────────────────────────────────────
+  admin_check:
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Checkout admin repo
+        uses: actions/checkout@v4
+        with:
+          repository: Kevonia/visitors-up-admin
+          ref: master
+          token: ${{ secrets.ADMIN_REPO_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install admin dependencies
+        run: npm ci
+      - name: Type-check (vue-tsc)
+        run: npm run type-check
+
   deploy:
+    # Block the deploy unless both gates pass.
+    needs: [test, admin_check]
     runs-on: ubuntu-latest
     # Secrets (EC2_HOST/USER/SSH_KEY, ADMIN_REPO_TOKEN) live in this GitHub
     # Environment; the job must declare it to read them.

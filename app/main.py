@@ -21,12 +21,30 @@ from app.enums import RoleEnum
 
 # Hide the interactive API docs (and the OpenAPI schema) in production.
 _IS_PROD = settings.app_env.strip().lower() == "production"
+
+# Error tracking: initialise Sentry as early as possible so startup errors are
+# captured too. No-op when SENTRY_DSN is unset (local/dev).
+if settings.sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        send_default_pii=False,  # never ship resident PII to Sentry
+    )
+    logger.info("Sentry error tracking enabled")
+
 app = FastAPI(
     title="Twickenham Glades API",
     docs_url=None if _IS_PROD else "/docs",
     redoc_url=None if _IS_PROD else "/redoc",
     openapi_url=None if _IS_PROD else "/openapi.json",
 )
+
+# Prometheus metrics at /metrics (request counts, latencies, in-progress, etc.).
+if settings.metrics_enabled:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/health", tags=["Health"], include_in_schema=False)

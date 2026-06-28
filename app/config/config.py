@@ -111,6 +111,13 @@ class Settings(BaseSettings):
     dimepay_base_url: str = Field(default="https://sandbox.api.dimepay.app/dapi/v1", env="DIMEPAY_BASE_URL")
     dimepay_client_key: str = Field(default="", env="DIMEPAY_CLIENT_KEY")
 
+    # ── Observability ────────────────────────────────────────────────────────
+    # Sentry error tracking (set SENTRY_DSN to enable). traces_sample_rate keeps
+    # perf tracing light. Prometheus /metrics is on unless disabled.
+    sentry_dsn: str = Field(default="", env="SENTRY_DSN")
+    sentry_traces_sample_rate: float = Field(default=0.0, env="SENTRY_TRACES_SAMPLE_RATE")
+    metrics_enabled: bool = Field(default=True, env="METRICS_ENABLED")
+
     # ── Accounting provider (Zoho today; QuickBooks optional) ────────────────
     # Selects which accounting back-end syncs invoices/dues and receives payment
     # write-backs. "zoho" (default, unchanged) or "quickbooks".
