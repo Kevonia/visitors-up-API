@@ -372,6 +372,27 @@ class PaymentOut(BaseModel):
     paid_at: Optional[int] = None
 
 
+# Branding (white-label) schemas
+class BrandingOut(BaseModel):
+    community_name: str
+    tagline: Optional[str] = None
+    primary_color: str
+    accent_color: str
+    sidebar_color: str
+    sidebar_text_color: str
+    logo_url: Optional[str] = None
+    updated_at: int
+
+
+class BrandingUpdate(BaseModel):
+    community_name: Optional[str] = None
+    tagline: Optional[str] = None
+    primary_color: Optional[str] = None
+    accent_color: Optional[str] = None
+    sidebar_color: Optional[str] = None
+    sidebar_text_color: Optional[str] = None
+
+
 # Guard account schemas
 class GuardCreate(BaseModel):
     email: str

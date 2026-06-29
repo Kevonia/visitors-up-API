@@ -263,7 +263,9 @@ ok "Public IP: $PUBLIC_IP"
 export PUBLIC_HOST="$PUBLIC_IP"
 ADMIN_ORIGIN="http://${PUBLIC_IP}"
 [ "$ADMIN_PORT" != "80" ] && ADMIN_ORIGIN="http://${PUBLIC_IP}:${ADMIN_PORT}"
-export CORS_ALLOW_ORIGINS="${ADMIN_ORIGIN},http://localhost,http://localhost:8080,http://localhost:5173"
+# Include the HTTPS sslip.io host and the marketing site's GitHub Pages origin so
+# the public /branding endpoints can be read cross-origin by the marketing page.
+export CORS_ALLOW_ORIGINS="${ADMIN_ORIGIN},https://${PUBLIC_IP}.sslip.io,https://kevonia.github.io,http://localhost,http://localhost:8080,http://localhost:5173"
 log "Admin origin: $ADMIN_ORIGIN  •  API: http://${PUBLIC_IP}:${API_PORT}"
 
 # api/.env is required by the compose env_file; bootstrap it from the example.

@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Float, Boolean, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Float, Boolean, LargeBinary, UUID as SQLAlchemyUUID, Enum, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from .database import Base
 import time
@@ -647,5 +647,37 @@ class IntegrationToken(Base):
             "provider": self.provider,
             "realm_id": self.realm_id,
             "connected": bool(self.refresh_token and self.realm_id),
+            "updated_at": self.updated_at,
+        }
+
+
+class BrandingConfig(Base):
+    """Global white-label branding (singleton row): community name, palette and
+    an uploaded logo. The logo is stored in the DB (not the filesystem) because
+    the deploy rsyncs with --delete and would wipe runtime-written static files;
+    the Postgres volume persists."""
+    __tablename__ = "branding_config"
+    id = Column(SQLAlchemyUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    community_name = Column(String, nullable=False, default="Twickenham Glades")
+    tagline = Column(String, nullable=True)
+    primary_color = Column(String, nullable=False, default="#1e5631")
+    accent_color = Column(String, nullable=False, default="#c9a227")
+    sidebar_color = Column(String, nullable=False, default="#1e5631")
+    sidebar_text_color = Column(String, nullable=False, default="#ffffff")
+    logo_data = Column(LargeBinary, nullable=True)
+    logo_content_type = Column(String, nullable=True)
+    created_at = Column(Integer, nullable=False, default=time.time)
+    updated_at = Column(Integer, nullable=False, default=time.time)
+
+    def to_dict(self):
+        return {
+            "community_name": self.community_name,
+            "tagline": self.tagline,
+            "primary_color": self.primary_color,
+            "accent_color": self.accent_color,
+            "sidebar_color": self.sidebar_color,
+            "sidebar_text_color": self.sidebar_text_color,
+            # Cache-busted by updated_at so clients refetch when the logo changes.
+            "logo_url": (f"/api/v1/branding/logo?v={self.updated_at}" if self.logo_data else None),
             "updated_at": self.updated_at,
         }
