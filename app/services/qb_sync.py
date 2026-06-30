@@ -11,6 +11,7 @@ import time
 from sqlalchemy.orm import Session
 
 from app import models
+from app.config.config import settings
 from app.enums import DelinquencyEnum
 from app.services.lists import classify_from_balance, is_delinquent
 
@@ -19,13 +20,28 @@ def _email_of(customer: dict) -> str:
     return ((customer.get("PrimaryEmailAddr") or {}).get("Address") or "").strip()
 
 
+def _on_payment_plan(customer: dict) -> str:
+    """Read the configured QBO custom field that flags a payment plan.
+    Returns 'Y' / 'N' / '' (field absent or feature disabled)."""
+    target = (settings.qbo_payment_plan_field or "").strip().lower()
+    if not target:
+        return ""
+    for cf in customer.get("CustomField") or []:
+        if str(cf.get("Name") or "").strip().lower() == target:
+            val = str(cf.get("StringValue") or "").strip().upper()
+            return "Y" if val in ("Y", "YES", "TRUE", "1") else "N"
+    return ""
+
+
 def apply_customer(resident: models.Resident, customer: dict) -> None:
     """Set a resident's cached fields from a QBO Customer dict (no commit)."""
     outstanding = float(customer.get("Balance") or 0)
     resident.name = customer.get("DisplayName") or customer.get("CompanyName") or resident.name
     resident.outstanding_balance = outstanding
-    resident.on_payment_plan = None  # QBO has no payment-plan flag by default
-    category = classify_from_balance(outstanding, None)
+    # Yellow comes from a configurable QBO custom field (blank disables it).
+    plan = _on_payment_plan(customer)
+    resident.on_payment_plan = plan or None
+    category = classify_from_balance(outstanding, plan)
     resident.list_category = category
     resident.customer_status = "Active" if customer.get("Active", True) else "Inactive"
     # Reuse the existing accounting-customer-id column.
@@ -86,4 +102,7 @@ def sync_resident(db: Session, resident: models.Resident, qb_client, with_invoic
     if with_invoices and customer.get("Id"):
         invoices = qb_client.get_invoices_for_customer(customer["Id"])
         cache_invoices(db, resident, invoices)
+    # Preserve in-app payments QBO hasn't reflected yet (see zoho_sync).
+    from .payment_service import reapply_unreconciled_payments
+    reapply_unreconciled_payments(db, resident)
     return True

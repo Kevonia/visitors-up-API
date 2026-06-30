@@ -96,6 +96,10 @@ def sync_resident(db: Session, resident: models.Resident, zoho_client, with_invo
     if with_invoices and contact.get("contact_id"):
         invoices = zoho_client.get_invoices_for_contact(contact["contact_id"])
         cache_invoices(db, resident, invoices)
+    # The sync just overwrote invoices/standing from Zoho — re-apply any in-app
+    # payments Zoho hasn't reflected yet so a paid resident never reverts.
+    from .payment_service import reapply_unreconciled_payments
+    reapply_unreconciled_payments(db, resident)
     return True
 
 

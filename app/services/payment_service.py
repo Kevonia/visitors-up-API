@@ -116,9 +116,13 @@ def finalize_payment(db: Session, payment: "models.Payment", status: str,
     pid_str = str(payment.id)
     db.commit()
 
-    # Best-effort write-back to the accounting system (reconciled at next sync otherwise).
+    # Best-effort write-back to the accounting system. If it lands, mark the
+    # payment reconciled so the daily sync trusts the accounting system for it;
+    # if it doesn't, the sync re-applies it locally (reapply_unreconciled_payments).
     try:
-        accounting.record_payment_best_effort(db, payment)
+        if accounting.record_payment_best_effort(db, payment):
+            payment.applied_to_accounting = True
+            db.commit()
     except Exception as e:
         logger.warning("Write-back error for payment %s: %s", pid_str, e)
 
@@ -141,3 +145,59 @@ def finalize_payment(db: Session, payment: "models.Payment", status: str,
                  detail=f"payment={pid_str} amount={snapshot.get('amount')} provider={snapshot.get('provider')}")
     logger.info("Payment %s COMPLETED (%s via %s)", pid_str, amount_str, snapshot.get("provider"))
     return payment
+
+
+def reapply_unreconciled_payments(db: Session, resident: "models.Resident") -> None:
+    """Run after a sync re-pulls invoices/standing from the accounting system.
+
+    The daily sync overwrites a resident's cached invoices + outstanding balance
+    from Zoho/QBO. An in-app payment that hasn't been written back there yet
+    would otherwise revert the resident to unpaid (and possibly RED, re-blocking
+    their visitors at the gate). So for each COMPLETED payment not yet reflected
+    in accounting, we retry the write-back and, failing that, re-apply it locally
+    — to the matching cached invoice and the resident's outstanding balance — and
+    reclassify. This is drift-free: each sync resets from accounting first, so the
+    payment is only ever subtracted once per cycle.
+    """
+    from . import accounting
+
+    pays = (db.query(models.Payment)
+            .filter(models.Payment.resident_id == resident.id,
+                    models.Payment.status == "COMPLETED",
+                    models.Payment.applied_to_accounting.is_(False))
+            .all())
+    if not pays:
+        return
+
+    unreconciled = 0.0
+    for p in pays:
+        # Retry the write-back; if it lands now, accounting reflects it → stop re-applying.
+        try:
+            if accounting.record_payment_best_effort(db, p):
+                p.applied_to_accounting = True
+                continue
+        except Exception as e:
+            logger.warning("Write-back retry failed for payment %s: %s", p.id, e)
+
+        amount = float(p.amount or 0)
+        unreconciled += amount
+        if p.invoice_id:
+            inv = (db.query(models.CachedInvoice)
+                   .filter(models.CachedInvoice.resident_id == resident.id,
+                           models.CachedInvoice.invoice_id == p.invoice_id)
+                   .first())
+            if inv and float(inv.balance or 0) >= amount:
+                inv.balance = max(0.0, float(inv.balance) - amount)
+                if inv.balance <= 0:
+                    inv.status = "paid"
+
+    if unreconciled > 0:
+        resident.outstanding_balance = max(0.0, float(resident.outstanding_balance or 0) - unreconciled)
+        category = classify_from_balance(resident.outstanding_balance, resident.on_payment_plan)
+        resident.list_category = category
+        resident.delinquency_status = (
+            DelinquencyEnum.ACTIVE if is_delinquent(category) else DelinquencyEnum.INACTIVE
+        )
+        resident.updated_at = int(time.time())
+        logger.info("Re-applied %d unreconciled payment(s) for resident %s (outstanding -%.2f)",
+                    len(pays), resident.id, unreconciled)

@@ -608,6 +608,9 @@ class Payment(Base):
     created_at = Column(Integer, nullable=False, default=time.time, index=True)
     updated_at = Column(Integer, nullable=False, default=time.time)
     paid_at = Column(Integer, nullable=True)
+    # True once the payment has been recorded in the accounting system (Zoho/QBO).
+    # While False, the sync re-applies it locally so a paid resident never reverts.
+    applied_to_accounting = Column(Boolean, nullable=False, default=False)
 
     resident = relationship("Resident", lazy="joined")
 

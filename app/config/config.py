@@ -131,6 +131,9 @@ class Settings(BaseSettings):
     qbo_env: str = Field(default="sandbox", env="QBO_ENV")  # sandbox | production
     qbo_base_url: str = Field(default="", env="QBO_BASE_URL")  # auto by env if blank
     qbo_minor_version: str = Field(default="65", env="QBO_MINOR_VERSION")
+    # Name of the QBO Customer custom field that flags a payment plan (-> Yellow).
+    # Blank disables the Yellow tier for QuickBooks.
+    qbo_payment_plan_field: str = Field(default="On Payment Plan", env="QBO_PAYMENT_PLAN_FIELD")
 
     # JWT configuration
     secret_key: str = Field(..., env="SECRET_KEY")
