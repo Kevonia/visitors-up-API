@@ -62,6 +62,61 @@ services:
         condition: service_healthy
     command: sh -c "rq worker -u $${REDIS_URL} default"
 
+  # Scheduled jobs. On Render these were two `type: cron` services (see
+  # render.yaml); the EC2 docker-compose deploy has no cron runtime, so they run
+  # here as long-lived containers on a sleep loop. Without these the resident
+  # roster (payment list / standing) never refreshes from Zoho and in-app
+  # payments never reconcile — the roster freezes at its last-synced values.
+
+  # Daily: refresh every resident's dues/standing from the accounting provider.
+  # Mirrors render.yaml's `vms-zoho-sync` (was "0 6 * * *"). Runs once at start
+  # (so a deploy immediately re-syncs) then every 24h.
+  scheduler-accounting:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
+      POSTGRES_DB: ${POSTGRES_DB:-vms}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@db:5432/${POSTGRES_DB:-vms}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: sh -c "while true; do python scripts/sync_accounting.py || true; sleep 86400; done"
+
+  # Every 15 min: finalize/expire PENDING in-app payments (DimePay has no
+  # webhooks). Mirrors render.yaml's `vms-payment-reconcile` ("*/15 * * * *").
+  scheduler-reconcile:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
+      POSTGRES_DB: ${POSTGRES_DB:-vms}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@db:5432/${POSTGRES_DB:-vms}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: sh -c "while true; do python scripts/reconcile_payments.py || true; sleep 900; done"
+
   # Dev email + SMS catcher: captures all notifications (SMS arrive as emails).
   # Web UI at http://localhost:8025, SMTP on 1025.
   mailpit:
