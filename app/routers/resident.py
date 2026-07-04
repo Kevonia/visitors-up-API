@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..database import SessionLocal
 from ..utilities.db_util import get_db
-from ..config.auth import get_current_user 
+from ..config.auth import get_current_user
+from ..services.roster import build_roster
+from ..logging_config import logger
 from aiocache import cached
 router = APIRouter()
 
@@ -16,6 +18,19 @@ cache_timer =60
 @router.post("/residents/", response_model=schemas.Resident)
 def create_resident(resident: schemas.ResidentCreate, db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
     return crud.create_resident(db=db, resident=resident)
+
+# Full community roster: every Zoho contact + a `registered` flag (admin/manager
+# only, gated at the router mount). Declared BEFORE /residents/{resident_id} so
+# "roster" isn't captured as a resident id.
+@router.get("/residents/roster")
+def read_roster(db: Session = Depends(get_db), current_user: schemas.UserBase = Depends(get_current_user)):
+    try:
+        return build_roster(db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to build resident roster: {e}")
+        raise HTTPException(status_code=502, detail="Could not build the roster from Zoho.")
 
 # Get a resident by ID
 @router.get("/residents/{resident_id}", response_model=schemas.Resident)

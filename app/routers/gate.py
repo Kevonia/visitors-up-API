@@ -126,8 +126,11 @@ def _resident_category(v) -> str:
 @router.get("/residents")
 def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
     """Guard resident directory: verify authorized residents at the gate. Returns
-    name, lot, phone (from the linked user), standing list (White/Yellow/Red) and
-    the number of the resident's visitors currently on-site (open gate entries)."""
+    name, lot, phone (from the linked user), standing list (Green/Yellow/Red) and
+    the number of the resident's visitors currently on-site (open gate entries).
+
+    Also includes Zoho contacts who have not yet registered for the app, tagged
+    ``registered: false`` so guards can still look anyone up."""
     from sqlalchemy import func
     residents = db.query(models.Resident).all()
     # One grouped query for currently-on-site visitor counts per resident.
@@ -153,7 +156,32 @@ def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
                 1 for v in (r.visitors or []) if (v.vehicle_plate or "").strip()
             ),
             "role": "OWNER",
+            "registered": True,
         })
+    # Append Zoho contacts with no app account yet (best-effort — never fail the
+    # directory if Zoho is unreachable).
+    try:
+        from ..services.roster import (
+            unregistered_contacts,
+            name_from_contact,
+            lot_from_contact,
+            classify_contact,
+            _contact_phone,
+        )
+        for c in unregistered_contacts(db):
+            out.append({
+                "id": None,
+                "name": name_from_contact(c) or "Resident",
+                "lot_no": lot_from_contact(c),
+                "phone": _contact_phone(c) or None,
+                "list_category": classify_contact(c).value,
+                "visitors_on_site": 0,
+                "authorized_vehicles": 0,
+                "role": "OWNER",
+                "registered": False,
+            })
+    except Exception as e:
+        logger.warning(f"Gate directory: could not append unregistered Zoho contacts: {e}")
     out.sort(key=lambda x: (x["lot_no"] or ""))
     return out
 

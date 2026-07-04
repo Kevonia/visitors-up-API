@@ -28,9 +28,10 @@ METRIC_CALLS = "zoho:metrics:api_calls"
 METRIC_CACHE_HITS = "zoho:metrics:cache_hits"
 
 # Cache TTLs (seconds)
-CONTACT_TTL = 6 * 3600
+CONTACT_TTL = 3 * 3600  # keep list-category source data ≤3h stale (see zoho_cache_ttl)
 ADDRESS_TTL = 6 * 3600
 INVOICE_TTL = 3600
+ALL_CONTACTS_TTL = 3 * 3600  # full-roster contact pull; refreshed at most every 3h
 
 _TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
 
@@ -175,6 +176,25 @@ class ZohoClient:
         )
         self._cache_set(key, contact or {}, CONTACT_TTL)
         return contact
+
+    def get_all_contacts(self):
+        """Every Zoho contact (paged, 200/page), cached in Redis so the roster
+        endpoints don't re-page the whole contact list on every request."""
+        key = "zoho:cache:contacts:all"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        contacts, page = [], 1
+        while True:
+            data = self.make_request("contacts", params={"page": page, "per_page": 200})
+            if not isinstance(data, dict):
+                break
+            contacts.extend(data.get("contacts", []))
+            if not data.get("page_context", {}).get("has_more_page"):
+                break
+            page += 1
+        self._cache_set(key, contacts, ALL_CONTACTS_TTL)
+        return contacts
 
     def get_contact_address(self, contact_id: str):
         key = f"zoho:cache:address:{contact_id}"

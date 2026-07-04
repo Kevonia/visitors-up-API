@@ -60,7 +60,7 @@ envVarGroups:
       - key: RED_BALANCE_THRESHOLD
         value: "18000"
       - key: ZOHO_CACHE_TTL
-        value: "21600"           # 6h: how long /users/me + the gate trust the cache
+        value: "10800"           # 3h: how long /users/me + the gate trust the cache
       - key: GATE_BLOCK_DELINQUENT
         value: "true"
 

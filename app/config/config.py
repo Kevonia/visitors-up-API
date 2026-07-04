@@ -80,7 +80,8 @@ class Settings(BaseSettings):
     # RED list = not on a payment plan AND outstanding balance over this amount.
     red_balance_threshold: float = Field(default=18000.0, env="RED_BALANCE_THRESHOLD")
     # How long cached Zoho data on a resident stays fresh before a lazy refresh.
-    zoho_cache_ttl: int = Field(default=6 * 3600, env="ZOHO_CACHE_TTL")
+    # 3h so a resident's list category is never more than ~3 hours stale.
+    zoho_cache_ttl: int = Field(default=3 * 3600, env="ZOHO_CACHE_TTL")
     # Block checking in a visitor whose resident is RED (delinquent).
     gate_block_delinquent: bool = Field(default=True, env="GATE_BLOCK_DELINQUENT")
 
