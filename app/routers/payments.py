@@ -24,10 +24,60 @@ from ..payments import get_provider, enabled_providers
 from ..payments.factory import default_provider_name
 from ..services.payment_service import finalize_payment
 from ..utilities.ratelimit import enforce
+from ..zoho_integration.zoho_client import ZohoClient
 
 router = APIRouter()
 
 manager = require_roles(RoleEnum.ADMIN.value, RoleEnum.MANAGER.value)
+
+zoho_client = ZohoClient()
+
+
+def _zoho_date_to_epoch(d: Optional[str]) -> int:
+    """Zoho payment dates are 'YYYY-MM-DD'; treat as UTC midnight."""
+    if not d:
+        return int(time.time())
+    try:
+        return int(
+            datetime.datetime.strptime(d[:10], "%Y-%m-%d")
+            .replace(tzinfo=datetime.timezone.utc)
+            .timestamp()
+        )
+    except (ValueError, TypeError):
+        return int(time.time())
+
+
+def _zoho_payments_as_transactions() -> list[dict]:
+    """Payments recorded directly in Zoho, shaped like an in-app PaymentOut.
+
+    In-app payments are NOT written back to Zoho (accounting.record_payment is a
+    no-op), so these never overlap the DB payments — safe to merge, no dedupe.
+    Best-effort: never fail the payments view if Zoho is unreachable.
+    """
+    try:
+        raw = zoho_client.get_all_payments()
+    except Exception as e:  # noqa: BLE001 — Zoho down must not break the view
+        logger.warning(f"Could not load Zoho payments for the admin view: {e}")
+        return []
+    out = []
+    for p in raw or []:
+        ts = _zoho_date_to_epoch(p.get("date"))
+        out.append({
+            "id": f"zoho:{p.get('payment_id')}",
+            "resident_id": None,
+            "resident_name": p.get("customer_name"),
+            "lot_no": None,
+            "invoice_id": None,
+            "invoice_number": p.get("invoice_numbers") or p.get("payment_number"),
+            "amount": float(p.get("amount") or 0),
+            "currency": p.get("currency_code") or "JMD",
+            "status": "COMPLETED",
+            "provider": "zoho",
+            "provider_ref": p.get("payment_number") or p.get("reference_number"),
+            "created_at": ts,
+            "paid_at": ts,
+        })
+    return out
 
 # Collapse a resident's repeated "Pay" taps within this window into one PENDING.
 _DEDUPE_WINDOW_SECONDS = 90
@@ -231,12 +281,23 @@ def list_payments(
     db: Session = Depends(get_db),
     _user=Depends(manager),
 ):
-    """Admin payments list (newest first), optional status filter."""
+    """Admin payments list (newest first), optional status filter.
+
+    Merges in-app payments (DB) with payments recorded directly in Zoho so the
+    view reflects everything collected, not just app checkouts."""
     q = db.query(models.Payment)
     if status:
         q = q.filter(models.Payment.status == status.upper())
     rows = q.order_by(desc(models.Payment.created_at)).limit(min(limit, 1000)).all()
-    return [p.to_dict() for p in rows]
+    txns = [p.to_dict() for p in rows]
+
+    # Zoho payments are always COMPLETED — include them unless a different
+    # status filter is applied.
+    if not status or status.upper() == "COMPLETED":
+        txns.extend(_zoho_payments_as_transactions())
+
+    txns.sort(key=lambda t: t.get("created_at") or 0, reverse=True)
+    return txns[: min(limit, 1000)]
 
 
 @router.get("/admin/payments/summary")
@@ -261,13 +322,20 @@ def payments_summary(db: Session = Depends(get_db), _user=Depends(manager)):
         return db.query(func.count(models.Payment.id)).filter(
             models.Payment.status == status).scalar() or 0
 
-    collected_total = _completed_sum()
+    # Fold in payments recorded directly in Zoho (best-effort).
+    zoho_txns = _zoho_payments_as_transactions()
+    zoho_total = sum(t["amount"] for t in zoho_txns)
+    zoho_month = sum(
+        t["amount"] for t in zoho_txns if (t.get("paid_at") or 0) >= month_start)
+
+    collected_total = _completed_sum() + zoho_total
+    collected_month = _completed_sum(month_start) + zoho_month
     return {
-        "collected_this_month": _completed_sum(month_start),
+        "collected_this_month": collected_month,
         "collected_total": collected_total,
         "total_outstanding": total_outstanding,
         "delinquent_residents": int(delinquent),
-        "completed_count": _count("COMPLETED"),
+        "completed_count": _count("COMPLETED") + len(zoho_txns),
         "pending_count": _count("PENDING"),
         "failed_count": _count("FAILED"),
         # Share of (collected + still-outstanding) that has been collected.
@@ -289,6 +357,12 @@ def payments_by_day(days: int = 30, db: Session = Depends(get_db), _user=Depends
     for p in rows:
         day = datetime.datetime.utcfromtimestamp(p.paid_at or p.created_at).strftime("%Y-%m-%d")
         buckets[day] = buckets.get(day, 0.0) + float(p.amount or 0)
+    # Include Zoho-recorded payments within the window.
+    for t in _zoho_payments_as_transactions():
+        ts = t.get("paid_at") or t.get("created_at") or 0
+        if ts >= since:
+            day = datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+            buckets[day] = buckets.get(day, 0.0) + float(t.get("amount") or 0)
     out = []
     for i in range(days - 1, -1, -1):
         d = datetime.datetime.utcfromtimestamp(int(time.time()) - i * 86400).strftime("%Y-%m-%d")

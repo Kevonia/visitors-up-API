@@ -32,6 +32,7 @@ CONTACT_TTL = 3 * 3600  # keep list-category source data ≤3h stale (see zoho_c
 ADDRESS_TTL = 6 * 3600
 INVOICE_TTL = 3600
 ALL_CONTACTS_TTL = 3 * 3600  # full-roster contact pull; refreshed at most every 3h
+PAYMENTS_TTL = 1800           # full customer-payments pull; refreshed at most every 30m
 
 _TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
 
@@ -225,6 +226,30 @@ class ZohoClient:
         invoices = data.get("invoices", []) if isinstance(data, dict) else []
         self._cache_set(key, invoices, INVOICE_TTL)
         return invoices
+
+    def get_all_payments(self):
+        """Every Zoho customer payment (paged, 200/page), cached in Redis.
+
+        Used by the admin Payments view so payments recorded directly in Zoho
+        (not just in-app checkouts) show up as transactions and count toward
+        collections."""
+        key = "zoho:cache:payments:all"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        payments, page = [], 1
+        while True:
+            data = self.make_request(
+                "customerpayments", params={"page": page, "per_page": 200}
+            )
+            if not isinstance(data, dict):
+                break
+            payments.extend(data.get("customerpayments", []))
+            if not data.get("page_context", {}).get("has_more_page"):
+                break
+            page += 1
+        self._cache_set(key, payments, PAYMENTS_TTL)
+        return payments
 
     def metrics(self) -> dict:
         try:

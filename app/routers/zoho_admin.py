@@ -137,6 +137,40 @@ def resident_invoices(resident_id: str, db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/invoices/by-email", dependencies=[Depends(_admin)])
+def invoices_by_email(email: str):
+    """A contact's invoices pulled live from Zoho by email.
+
+    Works for ANY roster row — registered residents and unregistered Zoho
+    contacts alike (the resident-scoped endpoint only covers app accounts).
+    """
+    def _num(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    invoices = zoho_client.get_invoices_by_email(email) or []
+    result = [
+        {
+            "invoice_id": i.get("invoice_id"),
+            "invoice_number": i.get("invoice_number"),
+            "status": i.get("status"),
+            "total": _num(i.get("total")),
+            "balance": _num(i.get("balance")),
+            "due_date": i.get("due_date"),
+            "date": i.get("date"),
+            "currency_code": i.get("currency_code"),
+            "company_name": i.get("company_name"),
+            "invoice_url": i.get("invoice_url"),
+        }
+        for i in invoices
+    ]
+    # Open (still-owed) invoices first, then by due date.
+    result.sort(key=lambda x: (x["balance"] <= 0, x["due_date"] or ""))
+    return result
+
+
 @router.post("/zoho/cache/bust", dependencies=[Depends(_admin)])
 def bust_cache():
     """Invalidate all cached Zoho responses (forces fresh fetches)."""
