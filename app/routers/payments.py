@@ -5,6 +5,7 @@ public return endpoint (and/or posts a webhook) where the payment is finalized.
 A reconcile cron (scripts/reconcile_payments.py) catches anything left pending.
 """
 import datetime
+import html
 import json
 import time
 from typing import Optional
@@ -222,7 +223,9 @@ async def _merge_params(request: Request) -> dict:
 
 
 def _lookup_payment(db: Session, params: dict) -> Optional["models.Payment"]:
-    pid = params.get("ref") or params.get("order_id") or params.get("payment_id")
+    # `oid` is IPG Connect's order id (we set it to the payment id).
+    pid = (params.get("ref") or params.get("order_id")
+           or params.get("payment_id") or params.get("oid"))
     if pid:
         p = db.query(models.Payment).filter(models.Payment.id == pid).first()
         if p:
@@ -231,6 +234,40 @@ def _lookup_payment(db: Session, params: dict) -> Optional["models.Payment"]:
     if txn:
         return db.query(models.Payment).filter(models.Payment.provider_ref == str(txn)).first()
     return None
+
+
+@router.get("/payments/ipg/redirect/{payment_id}", include_in_schema=False)
+def ipg_redirect(payment_id: str, db: Session = Depends(get_db)):
+    """Bridge: IPG Connect needs a form POST, so render an auto-submitting form
+    to the gateway from the signed fields stored on the payment at checkout."""
+    payment = (db.query(models.Payment)
+               .filter(models.Payment.id == payment_id,
+                       models.Payment.provider == "ipg").first())
+    if not payment:
+        return _result_page(False, "We couldn't find this payment.")
+    try:
+        raw = json.loads(payment.raw or "{}")
+    except Exception:
+        raw = {}
+    fields = raw.get("fields") or {}
+    gateway = raw.get("gateway_url") or ""
+    if not fields or not gateway:
+        return _result_page(False, "Could not start the payment. Please try again.")
+    inputs = "".join(
+        f'<input type="hidden" name="{html.escape(str(k))}" '
+        f'value="{html.escape(str(v))}"/>'
+        for k, v in fields.items() if v is not None)
+    page = f"""<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Redirecting to secure checkout…</title></head>
+<body style="font-family:system-ui;margin:0;display:grid;place-items:center;height:100vh;background:#F6F8F5">
+<form id="ipg" method="post" action="{html.escape(gateway)}">{inputs}</form>
+<div style="text-align:center;color:#5B6B61">
+<div style="font-size:40px">🔒</div>
+<p>Taking you to the secure payment page…</p></div>
+<script>document.getElementById('ipg').submit();</script>
+</body></html>"""
+    return HTMLResponse(content=page)
 
 
 @router.api_route("/payments/return/{provider}", methods=["GET", "POST"], include_in_schema=False)

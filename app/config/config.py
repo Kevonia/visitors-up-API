@@ -89,14 +89,30 @@ class Settings(BaseSettings):
     # Off by default; turn on once a provider's credentials are set. providers is
     # a CSV of enabled provider names (wipay,dimepay,test). default_payment_provider
     # is used when the client doesn't name one.
-    payments_enabled: bool = Field(default=False, env="PAYMENTS_ENABLED")
-    payments_providers: str = Field(default="", env="PAYMENTS_PROVIDERS")
-    default_payment_provider: str = Field(default="", env="DEFAULT_PAYMENT_PROVIDER")
+    # Demo default: the credential-free `test` provider is on so the pay flow
+    # works out of the box. For real money set PAYMENTS_PROVIDERS=ipg (+ the
+    # IPG_* creds below) and DEFAULT_PAYMENT_PROVIDER=ipg via env.
+    payments_enabled: bool = Field(default=True, env="PAYMENTS_ENABLED")
+    payments_providers: str = Field(default="test", env="PAYMENTS_PROVIDERS")
+    default_payment_provider: str = Field(default="test", env="DEFAULT_PAYMENT_PROVIDER")
     # Absolute base the provider redirects back to after checkout, e.g.
     # https://vms-api.onrender.com/api/v1/payments/return
     payment_return_base_url: str = Field(default="", env="PAYMENT_RETURN_BASE_URL")
     # Optional platform fee (%) recorded on each payment (0 = none).
     platform_fee_pct: float = Field(default=0.0, env="PLATFORM_FEE_PCT")
+
+    # ── First Data / Fiserv IPG "Connect" hosted-page provider ───────────────
+    # See payment docs/IPG_IntegrationGuide_Connect_V2016-3.pdf. Off until a
+    # store name + shared secret are set and `ipg` is added to PAYMENTS_PROVIDERS.
+    # Defaults target the IPG integration-test gateway in JMD (currency 388).
+    ipg_store_name: str = Field(default="", env="IPG_STORE_NAME")
+    ipg_shared_secret: str = Field(default="", env="IPG_SHARED_SECRET")
+    ipg_gateway_url: str = Field(
+        default="https://test.ipg-online.com/connect/gateway/processing",
+        env="IPG_GATEWAY_URL")
+    ipg_currency: str = Field(default="388", env="IPG_CURRENCY")  # 388 = JMD
+    ipg_timezone: str = Field(default="America/Jamaica", env="IPG_TIMEZONE")
+    ipg_mode: str = Field(default="payonly", env="IPG_MODE")
     # Reconcile PENDING payments older than this many minutes via the cron poll.
     payment_pending_grace_minutes: int = Field(default=20, env="PAYMENT_PENDING_GRACE_MINUTES")
 

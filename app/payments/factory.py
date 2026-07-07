@@ -8,11 +8,13 @@ from .base import PaymentProvider
 from .wipay import WiPayProvider
 from .dimepay import DimePayProvider
 from .test_provider import TestProvider
+from .ipg import IPGProvider
 
 _REGISTRY = {
     "wipay": WiPayProvider,
     "dimepay": DimePayProvider,
     "test": TestProvider,
+    "ipg": IPGProvider,
 }
 
 

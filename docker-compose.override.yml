@@ -8,6 +8,10 @@ services:
   # Migrations + seed still run once on start. Worker count is GUNICORN_WORKERS.
   web:
     restart: unless-stopped
+    # Payment checkout/return + the IPG bridge must use the public HTTPS host,
+    # not localhost — otherwise a phone can't open or complete a checkout.
+    environment:
+      PUBLIC_BASE_URL: https://3.134.90.19.sslip.io
     command: >
       sh -c "alembic upgrade head &&
              python scripts/seed_prod.py &&
