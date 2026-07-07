@@ -29,6 +29,9 @@ services:
       # Browser origins allowed by CORS. deploy.sh sets this to the public host so
       # the admin app (served on port 80) can call the API. Defaults suit local dev.
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      # Public HTTPS base for payment checkout/return + IPG bridge links (deploy.sh
+      # sets this to the sslip.io host; defaults to localhost for local dev).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8001}
     depends_on:
       db:
         condition: service_healthy

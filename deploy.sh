@@ -266,6 +266,9 @@ ADMIN_ORIGIN="http://${PUBLIC_IP}"
 # Include the HTTPS sslip.io host and the marketing site's GitHub Pages origin so
 # the public /branding endpoints can be read cross-origin by the marketing page.
 export CORS_ALLOW_ORIGINS="${ADMIN_ORIGIN},https://${PUBLIC_IP}.sslip.io,https://kevonia.github.io,http://localhost,http://localhost:8080,http://localhost:5173"
+# Public HTTPS base the API uses to build payment checkout/return + IPG bridge
+# links, so a customer on their phone reaches the sslip.io host (not localhost).
+export PUBLIC_BASE_URL="https://${PUBLIC_IP}.sslip.io"
 log "Admin origin: $ADMIN_ORIGIN  •  API: http://${PUBLIC_IP}:${API_PORT}"
 
 # api/.env is required by the compose env_file; bootstrap it from the example.
