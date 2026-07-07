@@ -89,12 +89,13 @@ class Settings(BaseSettings):
     # Off by default; turn on once a provider's credentials are set. providers is
     # a CSV of enabled provider names (wipay,dimepay,test). default_payment_provider
     # is used when the client doesn't name one.
-    # Demo default: the credential-free `test` provider is on so the pay flow
-    # works out of the box. For real money set PAYMENTS_PROVIDERS=ipg (+ the
-    # IPG_* creds below) and DEFAULT_PAYMENT_PROVIDER=ipg via env.
+    # Demo default: the credential-free `test` provider plus IPG (Fiserv Connect)
+    # are on, with IPG as the default so the pay flow exercises the real gateway
+    # redirect. IPG uses the guide's demo store below — override every value via
+    # env for a real assigned test/production store.
     payments_enabled: bool = Field(default=True, env="PAYMENTS_ENABLED")
-    payments_providers: str = Field(default="test", env="PAYMENTS_PROVIDERS")
-    default_payment_provider: str = Field(default="test", env="DEFAULT_PAYMENT_PROVIDER")
+    payments_providers: str = Field(default="test,ipg", env="PAYMENTS_PROVIDERS")
+    default_payment_provider: str = Field(default="ipg", env="DEFAULT_PAYMENT_PROVIDER")
     # Absolute base the provider redirects back to after checkout, e.g.
     # https://vms-api.onrender.com/api/v1/payments/return
     payment_return_base_url: str = Field(default="", env="PAYMENT_RETURN_BASE_URL")
@@ -105,8 +106,10 @@ class Settings(BaseSettings):
     # See payment docs/IPG_IntegrationGuide_Connect_V2016-3.pdf. Off until a
     # store name + shared secret are set and `ipg` is added to PAYMENTS_PROVIDERS.
     # Defaults target the IPG integration-test gateway in JMD (currency 388).
-    ipg_store_name: str = Field(default="", env="IPG_STORE_NAME")
-    ipg_shared_secret: str = Field(default="", env="IPG_SHARED_SECRET")
+    # Demo store from the integration guide (Connect examples, pages 4-5/19-20).
+    # Replace with your First Data-assigned test store via env for live auth.
+    ipg_store_name: str = Field(default="10123456789", env="IPG_STORE_NAME")
+    ipg_shared_secret: str = Field(default="sharedsecret", env="IPG_SHARED_SECRET")
     ipg_gateway_url: str = Field(
         default="https://test.ipg-online.com/connect/gateway/processing",
         env="IPG_GATEWAY_URL")
