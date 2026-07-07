@@ -281,6 +281,17 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
   fi
 fi
 
+# Payment checkout/return + IPG bridge links must use the public HTTPS host, not
+# localhost. Write it into api/.env (which compose reads) so it's correct even
+# under `sudo docker compose`, which drops exported shell vars.
+PBU="https://${PUBLIC_IP}.sslip.io"
+if grep -q '^PUBLIC_BASE_URL=' "$PROJECT_DIR/.env"; then
+  sed -i "s#^PUBLIC_BASE_URL=.*#PUBLIC_BASE_URL=${PBU}#" "$PROJECT_DIR/.env"
+else
+  printf '\nPUBLIC_BASE_URL=%s\n' "$PBU" >> "$PROJECT_DIR/.env"
+fi
+ok "PUBLIC_BASE_URL=${PBU}"
+
 # ── 6. build + start ─────────────────────────────────────────────────────────
 log "Building images (first run is slow — be patient)…"
 dc build
