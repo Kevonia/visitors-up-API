@@ -8,11 +8,9 @@ services:
   # Migrations + seed still run once on start. Worker count is GUNICORN_WORKERS.
   web:
     restart: unless-stopped
-    command: >
-      sh -c "alembic upgrade head &&
-             python scripts/seed_prod.py &&
-             gunicorn app.main:app -k uvicorn.workers.UvicornWorker
-             -w ${GUNICORN_WORKERS:-3} -b 0.0.0.0:8000 --timeout 60 --graceful-timeout 30"
+    # Single line on purpose: a folded (>) block with uneven indentation split the
+    # gunicorn args onto a second "command", so it lost -b and bound 127.0.0.1.
+    command: sh -c "alembic upgrade head && python scripts/seed_prod.py && gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${GUNICORN_WORKERS:-3} -b 0.0.0.0:8000 --timeout 60 --graceful-timeout 30"
 
   worker:
     restart: unless-stopped
