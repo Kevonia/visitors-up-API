@@ -47,6 +47,7 @@ cd "$(dirname "$0")"
 # relative to it, so we always point compose at the file explicitly.
 PROJECT_DIR="api"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+OVERRIDE_FILE="$PROJECT_DIR/docker-compose.override.yml"
 
 # Host ports. Admin defaults to 80 here (the whole point of a public demo);
 # override with ADMIN_PORT / API_PORT in the environment.
@@ -88,12 +89,14 @@ resolve_compose() {
 # Defaults keep this safe for the teardown shortcuts that run before the IP is
 # detected (PUBLIC_HOST/CORS_ALLOW_ORIGINS unset) under `set -u`.
 dc() {
+  ovr=""
+  [ -f "$OVERRIDE_FILE" ] && ovr="-f $OVERRIDE_FILE"
   $SUDO env \
     ADMIN_PORT="${ADMIN_PORT:-80}" \
     API_PORT="${API_PORT:-8000}" \
     PUBLIC_HOST="${PUBLIC_HOST:-localhost}" \
     CORS_ALLOW_ORIGINS="${CORS_ALLOW_ORIGINS:-http://localhost}" \
-    $COMPOSE -f "$COMPOSE_FILE" "$@"
+    $COMPOSE -f "$COMPOSE_FILE" $ovr "$@"
 }
 
 # ── teardown / logs / reseed shortcuts ───────────────────────────────────────
@@ -291,6 +294,14 @@ else
   printf '\nPUBLIC_BASE_URL=%s\n' "$PBU" >> "$PROJECT_DIR/.env"
 fi
 ok "PUBLIC_BASE_URL=${PBU}"
+
+# Point the TLS host (Caddyfile) and the admin bundle's API URL (override) at
+# THIS box's IP, so moving to a new server (e.g. EC2 → DigitalOcean) needs no
+# code edit — the sslip.io host follows the detected public IP.
+SSLIP_HOST="${PUBLIC_IP}.sslip.io"
+sed -i -E "s/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\.sslip\.io/${SSLIP_HOST}/g" \
+  "$PROJECT_DIR/Caddyfile" "$OVERRIDE_FILE" 2>/dev/null || true
+ok "TLS host: ${SSLIP_HOST}"
 
 # ── 6. build + start ─────────────────────────────────────────────────────────
 log "Building images (first run is slow — be patient)…"

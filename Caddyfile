@@ -1,8 +1,8 @@
-# TLS for the VMS stack via sslip.io (3.134.90.19.sslip.io -> 3.134.90.19).
+# TLS for the VMS stack via sslip.io (24.144.116.3.sslip.io -> 24.144.116.3).
 # Same-origin routing: the admin SPA at / and the API at /api/* share one host,
 # so the browser app calls the API with no CORS / mixed-content issues.
 # Port 80 is used by the admin container, so ACME uses the TLS-ALPN-01 challenge.
-3.134.90.19.sslip.io {
+24.144.116.3.sslip.io {
 	@api path /api/*
 	handle @api {
 		reverse_proxy web:8000
