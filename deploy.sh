@@ -246,17 +246,37 @@ $SUDO lsblk || true
 df -h || true
 fi
 
-# ── 4. detect public IP (EC2 IMDSv2, with fallbacks) ─────────────────────────
+# ── 4. detect public IP (works on EC2, DigitalOcean, anywhere) ───────────────
+# CRITICAL: every candidate is validated as a real dotted IPv4. On DigitalOcean
+# the EC2 metadata path returns a "not found" body, which previously became the
+# literal PUBLIC_IP and corrupted the sslip.io TLS host ("not found.sslip.io").
 log "Detecting public IP…"
-PUBLIC_IP=""
-TOKEN=$(curl -s --max-time 2 -X PUT "http://169.254.169.254/latest/api/token" \
-        -H "X-aws-ec2-metadata-token-ttl-seconds: 300" 2>/dev/null || true)
-if [ -n "$TOKEN" ]; then
-  PUBLIC_IP=$(curl -s --max-time 2 -H "X-aws-ec2-metadata-token: $TOKEN" \
-              http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)
+_is_ipv4() { printf '%s' "$1" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; }
+
+# Explicit override wins: PUBLIC_IP=1.2.3.4 ./deploy.sh
+PUBLIC_IP="${PUBLIC_IP:-}"
+if ! _is_ipv4 "$PUBLIC_IP"; then
+  PUBLIC_IP=""
+  TOKEN=$(curl -s --max-time 2 -X PUT "http://169.254.169.254/latest/api/token" \
+          -H "X-aws-ec2-metadata-token-ttl-seconds: 300" 2>/dev/null || true)
+  if [ -n "$TOKEN" ]; then
+    cand=$(curl -s --max-time 2 -H "X-aws-ec2-metadata-token: $TOKEN" \
+           http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)
+    _is_ipv4 "$cand" && PUBLIC_IP="$cand"
+  fi
+  # DigitalOcean metadata endpoint.
+  if ! _is_ipv4 "$PUBLIC_IP"; then
+    cand=$(curl -s --max-time 2 http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2>/dev/null || true)
+    _is_ipv4 "$cand" && PUBLIC_IP="$cand"
+  fi
+  # Provider-agnostic reflectors.
+  for url in https://checkip.amazonaws.com https://ifconfig.me https://api.ipify.org; do
+    _is_ipv4 "$PUBLIC_IP" && break
+    cand=$(curl -s --max-time 5 "$url" 2>/dev/null | tr -d '[:space:]' || true)
+    _is_ipv4 "$cand" && PUBLIC_IP="$cand"
+  done
 fi
-[ -z "$PUBLIC_IP" ] && PUBLIC_IP=$(curl -s --max-time 4 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]' || true)
-[ -z "$PUBLIC_IP" ] && PUBLIC_IP="localhost"
+_is_ipv4 "$PUBLIC_IP" || die "Could not determine a valid public IPv4 (got '$PUBLIC_IP'). Re-run as: PUBLIC_IP=<your.ip> ./deploy.sh"
 ok "Public IP: $PUBLIC_IP"
 
 # ── 5. wire the public host into the build + CORS ────────────────────────────
