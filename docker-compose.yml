@@ -124,9 +124,12 @@ services:
   # Web UI at http://localhost:8025, SMTP on 1025.
   mailpit:
     image: axllent/mailpit:latest
+    # Loopback-only: mailpit captures real notification content (OTP codes,
+    # password-reset links, SMS). Its web UI (8025) has no auth, so it must not be
+    # public. Reach it in prod via an SSH tunnel: `ssh -L 8025:127.0.0.1:8025 <box>`.
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
   db:
     image: postgres:15-alpine
@@ -134,8 +137,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-vms}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
       POSTGRES_DB: ${POSTGRES_DB:-vms}
+    # Loopback-only: internal services connect via `db:5432` on the compose
+    # network. Never publish Postgres to 0.0.0.0 — the default creds are weak and
+    # Docker bypasses UFW for published ports.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -146,8 +152,13 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Loopback-only host binding. Internal services reach Redis over the compose
+    # network as `redis:6379`, so no PUBLIC host port is needed; 127.0.0.1 keeps
+    # redis-cli usable in local dev without exposing 6379 to the internet.
+    # (A plain "6379:6379" publishes on 0.0.0.0 AND punches through UFW via
+    # Docker's own iptables rules — the exposure DigitalOcean/Shadowserver flagged.)
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
