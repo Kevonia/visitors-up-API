@@ -398,6 +398,9 @@ class GuardCreate(BaseModel):
     email: str
     phone_number: str
     password: str
+    # SECURITY / MANAGER / ADMIN. Omitted means SECURITY, so admin bundles built
+    # before staff roles existed keep creating guards exactly as they did.
+    role: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -407,8 +410,11 @@ class GuardCreate(BaseModel):
 
 class Guard(BaseModel):
     id: str
-    email: str
-    phone_number: str
+    # Both columns are nullable, and the staff listing now includes pre-existing
+    # ADMIN/MANAGER users that were not created through this form. A single row
+    # with a missing phone must not 500 the whole list.
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
     role: Optional[str] = None
     created_at: datetime
 # User schemas
