@@ -28,6 +28,12 @@ def lot_from_contact(contact: dict) -> str:
     return str(lot) if lot not in (None, "") else None
 
 
+def street_from_contact(contact: dict) -> str:
+    """The street name lives in the cf_street_name custom field."""
+    street = _cf(contact, "cf_street_name")
+    return str(street) if street not in (None, "") else None
+
+
 def name_from_contact(contact: dict) -> str:
     return contact.get("contact_name") or contact.get("customer_name")
 
@@ -44,7 +50,7 @@ def apply_contact(resident: models.Resident, contact: dict) -> None:
     resident.outstanding_balance = get_outstanding_balance(contact)
     resident.customer_status = contact.get("status")
     resident.zoho_contact_id = contact.get("contact_id")
-    street = _cf(contact, "cf_street_name")
+    street = street_from_contact(contact)
     if street:
         resident.street_name = street
     # Keep the legacy delinquency flag in sync (RED == delinquent).

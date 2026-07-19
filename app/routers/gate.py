@@ -126,8 +126,9 @@ def _resident_category(v) -> str:
 @router.get("/residents")
 def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
     """Guard resident directory: verify authorized residents at the gate. Returns
-    name, lot, phone (from the linked user), standing list (Green/Yellow/Red) and
-    the number of the resident's visitors currently on-site (open gate entries).
+    name, lot, street, phone (from the linked user), standing list
+    (Green/Yellow/Red) and the number of the resident's visitors currently
+    on-site (open gate entries). The app filters the directory by street.
 
     Also includes Zoho contacts who have not yet registered for the app, tagged
     ``registered: false`` so guards can still look anyone up."""
@@ -147,6 +148,7 @@ def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
             "id": str(r.id),
             "name": r.name or "Resident",
             "lot_no": r.lot_no,
+            "street_name": r.street_name,
             "phone": r.user.phone_number if r.user else None,
             "list_category": r.list_category.value if r.list_category else "WHITE",
             "visitors_on_site": onsite_by_resident.get(str(r.id), 0),
@@ -165,6 +167,7 @@ def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
             unregistered_contacts,
             name_from_contact,
             lot_from_contact,
+            street_from_contact,
             classify_contact,
             _contact_phone,
         )
@@ -173,6 +176,7 @@ def directory(db: Session = Depends(get_db), _user=Depends(gate_user)):
                 "id": None,
                 "name": name_from_contact(c) or "Resident",
                 "lot_no": lot_from_contact(c),
+                "street_name": street_from_contact(c),
                 "phone": _contact_phone(c) or None,
                 "list_category": classify_contact(c).value,
                 "visitors_on_site": 0,

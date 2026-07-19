@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.services.lists import classify_contact, get_outstanding_balance
-from app.services.zoho_sync import name_from_contact, lot_from_contact
+from app.services.zoho_sync import (
+    name_from_contact,
+    lot_from_contact,
+    street_from_contact,
+)
 from app.zoho_integration.zoho_client import ZohoClient
 
 zoho_client = ZohoClient()
